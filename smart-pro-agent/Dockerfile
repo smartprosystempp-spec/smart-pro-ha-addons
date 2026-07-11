@@ -1,6 +1,4 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
-
+FROM alpine:latest
 # Εγκατάσταση βασικών εργαλείων για το Linux του Home Assistant
 RUN apk add --no-cache wget curl libc6-compat
 
