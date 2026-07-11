@@ -1,12 +1,18 @@
-
 #!/bin/sh
 
 echo "=========================================="
 echo "  Smart Pro System - Remote Support"
 echo "=========================================="
-echo "Γίνεται σύνδεση με τον κεντρικό server..."
+echo "Γίνεται απευθείας λήψη και εκκίνηση του πράκτορα..."
 
-(wget "https://support.smart-pro-system.com/meshagents?script=1" -O ./meshinstall.sh || wget "https://support.smart-pro-system.com/meshagents?script=1" --no-proxy -O ./meshinstall.sh) && chmod 755 ./meshinstall.sh && sudo -E ./meshinstall.sh https://support.smart-pro-system.com 'U6JxVGtHVArUuU1GiE8XO8byJMA4B3MoeKyv3gLi3q9zqWU$MTdaAHNJzONotTZr' || ./meshinstall.sh https://support.smart-pro-system.com 'U6JxVGtHVArUuU1GiE8XO8byJMA4B3MoeKyv3gLi3q9zqWU$MTdaAHNJzONotTZr'
+# 1. Λήψη του εκτελέσιμου αρχείου
+wget -q "https://support.smart-pro-system.com/meshagents?id=26" -O /meshagent
 
-# Αυτή η εντολή κρατάει το πρόγραμμα ενεργό
-tail -f /dev/null
+# 2. Λήψη του αρχείου ρυθμίσεων (προσοχή στα μονά εισαγωγικά, είναι κρίσιμα!)
+wget -q 'https://support.smart-pro-system.com/meshsettings?id=U6JxVGtHVArUuU1GiE8XO8byJMA4B3MoeKyv3gLi3q9zqWU$MTdaAHNJzONotTZr' -O /meshagent.msh
+
+# 3. Δίνουμε δικαιώματα εκτέλεσης
+chmod +x /meshagent
+
+# 4. Εκτέλεση του προγράμματος στο προσκήνιο
+exec /meshagent
