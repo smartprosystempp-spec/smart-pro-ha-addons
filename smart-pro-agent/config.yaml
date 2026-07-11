@@ -1,0 +1,14 @@
+name: "Smart Pro System - Remote Support"
+description: "Επίσημο εργαλείο απομακρυσμένης υποστήριξης από το Smart Pro System."
+version: "1.0.0"
+slug: "smart_pro_agent"
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+startup: application
+boot: auto
+host_network: true
+options: {}
+schema: {}
