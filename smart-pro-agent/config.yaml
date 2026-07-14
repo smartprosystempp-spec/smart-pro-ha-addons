@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
 description: "Επίσημο εργαλείο απομακρυσμένης υποστήριξης από το Smart Pro System."
-version: "1.0.0"
+version: "1.0.1"
 slug: "smart_pro_agent"
 arch:
   - aarch64
