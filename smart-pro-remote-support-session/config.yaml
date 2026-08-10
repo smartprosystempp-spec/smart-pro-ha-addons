@@ -1,0 +1,14 @@
+name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
+description: "Πειραματική βάση για προσωρινή απομακρυσμένη συνεδρία απευθείας από Home Assistant OS. Δεν πραγματοποιεί ακόμη πραγματική σύνδεση."
+version: "0.1.0"
+slug: "smart_pro_remote_support_session"
+arch:
+  - aarch64
+  - amd64
+startup: once
+boot: manual_only
+host_network: false
+stage: experimental
+url: "https://smart-pro-system.gr/remote-support/"
+options: {}
+schema: {}
