@@ -1,0 +1,7 @@
+configuration:
+  broker_url:
+    name: "Validation endpoint"
+    description: "HTTPS endpoint for the Smart Pro Remote Session Broker. Keep the default value for normal QA."
+  session_code:
+    name: "Temporary session code"
+    description: "The SP-XXXX-XXXX code created by Smart Pro Admin. Clear it after QA."

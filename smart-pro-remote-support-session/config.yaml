@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Πειραματική βάση για προσωρινή απομακρυσμένη συνεδρία απευθείας από Home Assistant OS. Δεν πραγματοποιεί ακόμη πραγματική σύνδεση."
-version: "0.1.0"
+description: "Ελεγχόμενος έλεγχος προσωρινού κωδικού συνεδρίας μέσω Smart Pro Broker. Η 0.2.0 δεν ενεργοποιεί ακόμη πραγματικό remote access."
+version: "0.2.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64
@@ -10,5 +10,8 @@ boot: manual_only
 host_network: false
 stage: experimental
 url: "https://smart-pro-system.gr/remote-support/"
-options: {}
-schema: {}
+options:
+  broker_url: "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
+schema:
+  broker_url: url
+  session_code: "password?"
