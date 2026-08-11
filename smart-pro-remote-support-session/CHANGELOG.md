@@ -1,3 +1,12 @@
+# 0.7.6 — Ephemeral Foreground Compatibility
+
+- Requires Broker 0.9.1 Phase F hardened contract.
+- Replaces the failing `./meshagent -connect` PTY launch with foreground `./meshagent` without arguments.
+- Explicitly forbids `-install` and service persistence.
+- Redirects HOME/TMP/XDG paths into the private runtime directory.
+- Applies local MSH hardening: `disableUpdate=1`, `noUpdateCoreModule=1`; removes force/fake update and crash-dump flags.
+- Keeps SHA/ELF verification, one-shot guard, launch counter, 60s watchdog, fail-closed revoke/watch logic and full runtime cleanup.
+
 # Changelog
 
 ## 0.7.5 — Phase F PTY Connect Compatibility Hotfix

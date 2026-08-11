@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Controlled MeshAgent Execution Phase F PTY-connect compatibility hotfix. Η 0.7.5 διατηρεί το verified canonical meshagent + meshagent.msh layout και το ένα μόνο ./meshagent -connect, αλλά του παρέχει isolated pseudo-terminal ώστε το επίσημο text/manual connect mode να μη λαμβάνει άμεσο EOF σε headless add-on runtime."
-version: "0.7.5"
+description: "Controlled MeshAgent Execution Phase F ephemeral-foreground compatibility update. Η 0.7.6 διατηρεί το verified canonical meshagent + meshagent.msh layout, αλλά μετά από νέο Broker 0.9.1 contract εκτελεί το verified MeshAgent ως foreground process χωρίς arguments και χωρίς -install/service persistence, με hard 60s watchdog και πλήρες cleanup."
+version: "0.7.6"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

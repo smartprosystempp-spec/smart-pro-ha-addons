@@ -1,16 +1,17 @@
-# Controlled live QA — Phase F 0.7.5
+# Smart Pro Remote Support 0.7.6 — Phase F QA
 
-Η 0.7.5 είναι στοχευμένο PTY-connect compatibility hotfix πάνω στην 0.7.4.
+## Required server
+Smart Pro Remote Session Broker 0.9.1 or later.
 
-1. Κράτησε `smart-pro-system.gr` κλειδωμένο κατά το update. Ο Broker παραμένει 0.9.0.
-2. Revoke την προηγούμενη 0.7.4 test session και καθάρισε το session code πριν δημιουργήσεις νέο.
-3. Update το add-on σε 0.7.5 και επιβεβαίωσε `Stopped`, `Start on boot: OFF` και, αν υπάρχει Supervisor Watchdog toggle, `Watchdog: OFF`.
-4. Μην αλλάξεις/σταματήσεις το ξεχωριστό managed add-on 1.0.1 για αυτό το QA.
-5. Δημιούργησε fresh session, αποθήκευσε τον κωδικό και όπλισε Phase E και μετά Phase F.
-6. Σταμάτα για checkpoint πριν από Start.
-7. Στο ελεγχόμενο run επιτρέπεται μόνο μία `./meshagent -connect`, μέσω isolated pseudo-terminal, max 60s.
-8. Το raw MeshAgent output παραμένει ιδιωτικό runtime diagnostic και διαγράφεται στο cleanup.
-9. Expected success: `MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE`.
-10. Δεν γίνεται operator desktop/terminal/file-access QA σε αυτή τη φάση.
+## Execution model
+0.7.6 intentionally changes only the final Phase F runtime mode. The previous `-connect` path exited cleanly before the watchdog window in live QA. The new contract is explicit: `ephemeral_foreground=true`, `foreground_no_install=true`, `persistence=false`.
 
-Δεν υπάρχει `-install`, service persistence, host mounts, privileged mode ή δεύτερη επιτρεπόμενη execution για τον ίδιο session code.
+The add-on starts `./meshagent` with no arguments from a private temporary directory. It never calls `-install`. The temporary `.msh` receives local safety overrides that disable binary self-update and remote core replacement.
+
+## Live QA checkpoint
+Use a fresh session code and fresh E/F arming. Start once only. Expected success:
+
+`MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE`
+`CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ`
+
+Do not open remote desktop, terminal or files during this Phase F QA.

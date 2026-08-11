@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.5"
+VERSION="0.7.6"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
@@ -21,7 +21,7 @@ AGENT_PID=""
 RUN_GUARD_KEY_FILE="/data/.smart-pro-phase-f-one-shot.key"
 RUN_GUARD_STATE_FILE="/data/.smart-pro-phase-f-last-attempt"
 RUN_GUARD_FINGERPRINT=""
-LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v075"
+LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v076"
 
 umask 077
 ulimit -c 0 2>/dev/null || true
@@ -112,7 +112,7 @@ classify_startup_failure() {
   elif grep -Eqi 'bad web cert hash|certificate.*(error|fail|invalid)|tls.*(error|fail)' "$AGENT_LOG"; then
     STARTUP_CATEGORY="meshcentral_tls_or_certificate_rejected"
   elif grep -Eqi 'server url:|device group:|press ctrl-c to exit' "$AGENT_LOG"; then
-    STARTUP_CATEGORY="connect_mode_started_then_exited"
+    STARTUP_CATEGORY="meshagent_started_then_exited"
   elif grep -Eqi 'you can run the text version|usage:| -install| -uninstall| -update' "$AGENT_LOG"; then
     STARTUP_CATEGORY="meshagent_help_or_config_not_loaded"
   elif grep -Eqi 'unable to connect|connection refused|network is unreachable|name or service not known|temporary failure in name resolution|connect.*(fail|error)' "$AGENT_LOG"; then
@@ -539,6 +539,7 @@ EXECUTION_MAX_RUNTIME_HINT="$(jq -r '.execution_authorization.max_runtime_second
 case "$EXECUTION_REQUEST_ENDPOINT" in https://*) ;; *) fail "Το Phase F execution request endpoint δεν είναι HTTPS." ;; esac
 [ "$(url_origin "$EXECUTION_REQUEST_ENDPOINT")" = "$BROKER_ORIGIN" ] || fail "Το Phase F execution endpoint δεν ανήκει στο ίδιο HTTPS origin με τον Broker."
 [ "$EXECUTION_MAX_RUNTIME_HINT" -ge 15 ] && [ "$EXECUTION_MAX_RUNTIME_HINT" -le 120 ] || fail "Το Phase F runtime policy είναι εκτός ασφαλών ορίων."
+jq -e '.execution_authorization.temporary_connect == false and .execution_authorization.ephemeral_foreground == true and .execution_authorization.foreground_no_install == true and .execution_authorization.persistence == false and .execution_authorization.sandboxed_addon == true and .execution_authorization.mode == "controlled_execution_phase_f_ephemeral_foreground"' "$ACTIVATION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Η Phase E απάντηση δεν διαφημίζει το hardened Phase F ephemeral-foreground contract."
 rm -f "$ACTIVATION_CONSUME_RESPONSE"
 
 echo "ΕΠΙΤΥΧΙΑ: Η one-time Phase E authorization chain ολοκληρώθηκε."
@@ -587,7 +588,7 @@ for EP in "$EXECUTION_CONSUME_ENDPOINT" "$EXECUTION_WATCH_ENDPOINT" "$EXECUTION_
   case "$EP" in https://*) ;; *) fail "Phase F endpoint δεν είναι HTTPS." ;; esac
   [ "$(url_origin "$EP")" = "$BROKER_ORIGIN" ] || fail "Phase F endpoint δεν ανήκει στο Broker origin."
 done
-jq -e '.execution == false and .temporary_connect == true and .persistence == false and .sandboxed_addon == true and .mode == "controlled_execution_phase_f"' "$EXECUTION_REQUEST_RESPONSE" >/dev/null 2>&1 || fail "Η Phase F request απάντηση δεν είναι pre-execution locked."
+jq -e '.execution == false and .temporary_connect == false and .ephemeral_foreground == true and .foreground_no_install == true and .persistence == false and .sandboxed_addon == true and .mode == "controlled_execution_phase_f_ephemeral_foreground"' "$EXECUTION_REQUEST_RESPONSE" >/dev/null 2>&1 || fail "Η Phase F request απάντηση δεν είναι στο hardened ephemeral-foreground contract."
 rm -f "$EXECUTION_REQUEST_RESPONSE"
 
 EXECUTION_CONSUME_PAYLOAD="$(jq -n --arg ticket "$EXECUTION_TICKET" --arg client "home_assistant_os" --arg client_version "$VERSION" --arg architecture "$ARCHITECTURE" '{ticket:$ticket, client:$client, client_version:$client_version, architecture:$architecture}')"
@@ -602,7 +603,7 @@ EXECUTION_CONSUME_PAYLOAD=""
 [ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η κατανάλωση του Phase F execution ticket."
 jq empty "$EXECUTION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker επέστρεψε μη αναμενόμενη Phase F consume απάντηση (HTTP ${EXECUTION_CONSUME_HTTP})."
 [ "$EXECUTION_CONSUME_HTTP" = "200" ] || fail "Το Phase F execution ticket δεν καταναλώθηκε (HTTP ${EXECUTION_CONSUME_HTTP})."
-jq -e '.authorized == true and .consumed == true and .execution == true and .temporary_connect == true and .persistence == false and .sandboxed_addon == true and .mode == "controlled_execution_phase_f"' "$EXECUTION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Η τελική Phase F απάντηση δεν επιτρέπει μόνο controlled temporary execution."
+jq -e '.authorized == true and .consumed == true and .execution == true and .temporary_connect == false and .ephemeral_foreground == true and .foreground_no_install == true and .persistence == false and .sandboxed_addon == true and .mode == "controlled_execution_phase_f_ephemeral_foreground"' "$EXECUTION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Η τελική Phase F απάντηση δεν επιτρέπει μόνο hardened ephemeral foreground execution."
 FINAL_EXEC_ARCH="$(jq -r '.architecture // empty' "$EXECUTION_CONSUME_RESPONSE")"
 FINAL_EXEC_SHA="$(jq -r '.sha256 // empty' "$EXECUTION_CONSUME_RESPONSE")"
 FINAL_EXEC_BYTES="$(jq -r '.bytes // 0' "$EXECUTION_CONSUME_RESPONSE")"
@@ -610,10 +611,10 @@ FINAL_MAX_RUNTIME="$(jq -r '.max_runtime_seconds // 0' "$EXECUTION_CONSUME_RESPO
 [ "$FINAL_EXEC_ARCH" = "$ARCHITECTURE" ] && [ "$FINAL_EXEC_SHA" = "$EXPECTED_AGENT_SHA" ] && [ "$FINAL_EXEC_BYTES" = "$EXPECTED_AGENT_BYTES" ] || fail "Η τελική Phase F binding δεν συμφωνεί με το verified binary."
 [ "$FINAL_MAX_RUNTIME" = "$EXECUTION_MAX_RUNTIME" ] || fail "Το Phase F runtime policy άλλαξε μεταξύ request και consume."
 rm -f "$EXECUTION_CONSUME_RESPONSE"
-echo "ΕΠΙΤΥΧΙΑ: Phase F execution authorization καταναλώθηκε one-time. Επιτρέπεται μόνο προσωρινό -connect για ${EXECUTION_MAX_RUNTIME}s."
+echo "ΕΠΙΤΥΧΙΑ: Phase F execution authorization καταναλώθηκε one-time. Επιτρέπεται μόνο ephemeral foreground MeshAgent χωρίς -install/service persistence για ${EXECUTION_MAX_RUNTIME}s."
 echo ""
 
-echo "8/8 Ελεγχόμενη προσωρινή εκτέλεση MeshAgent -connect και υποχρεωτικός τερματισμός..."
+echo "8/8 Ελεγχόμενη ephemeral foreground εκτέλεση MeshAgent και υποχρεωτικός τερματισμός..."
 [ -f "$RUNTIME_DIR/meshagent" ] && [ -f "$RUNTIME_DIR/meshagent.msh" ] || fail "Το canonical MeshAgent runtime layout δεν είναι πλήρες."
 echo "ΕΠΙΤΥΧΙΑ: Canonical runtime layout έτοιμο: meshagent + meshagent.msh στον ίδιο ιδιωτικό προσωρινό φάκελο."
 # Static ELF runtime-loader compatibility check before any executable permission.
@@ -627,10 +628,38 @@ PREEXEC_SHA="$(sha256sum "$AGENT_TMP" | awk '{print $1}')"
 [ "$PREEXEC_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το verified MeshAgent άλλαξε πριν την εκτέλεση."
 chmod 700 "$AGENT_TMP" || fail "Δεν ήταν δυνατή η προσωρινή executable permission στο verified binary."
 
-command -v script >/dev/null 2>&1 || fail "Λείπει το isolated PTY helper από το add-on runtime."
-echo "ΕΠΙΤΥΧΙΑ: Το προσωρινό -connect θα εκτελεστεί σε απομονωμένο pseudo-terminal χωρίς operator input."
+# Phase F local MSH hardening. Keep identity/connection fields intact while refusing
+# self-update, remote core replacement and crash-dump persistence during this ephemeral QA run.
+MSH_HARDENED="$RUNTIME_DIR/meshagent.msh.hardened"
+awk -F= '
+  $1 != "disableUpdate" &&
+  $1 != "noUpdateCoreModule" &&
+  $1 != "forceUpdate" &&
+  $1 != "fakeUpdate" &&
+  $1 != "coreDumpEnabled" { print }
+' "$MSH_TMP" > "$MSH_HARDENED" || fail "Δεν ήταν δυνατή η δημιουργία hardened προσωρινού .msh."
+printf 'disableUpdate=1\nnoUpdateCoreModule=1\n' >> "$MSH_HARDENED"
+chmod 600 "$MSH_HARDENED" || fail "Δεν ήταν δυνατή η προστασία του hardened προσωρινού .msh."
+mv -f "$MSH_HARDENED" "$MSH_TMP" || fail "Δεν ήταν δυνατή η ενεργοποίηση του hardened προσωρινού .msh."
+for KEY in MeshName MeshType MeshID ServerID MeshServer; do
+  grep -q "^${KEY}=" "$MSH_TMP" || fail "Το hardened προσωρινό .msh αλλοίωσε απαιτούμενο πεδίο (${KEY})."
+done
+grep -q '^disableUpdate=1$' "$MSH_TMP" || fail "Το hardened προσωρινό .msh δεν απενεργοποίησε self-update."
+grep -q '^noUpdateCoreModule=1$' "$MSH_TMP" || fail "Το hardened προσωρινό .msh δεν κλείδωσε remote core replacement."
+! grep -Eq '^(forceUpdate|fakeUpdate|coreDumpEnabled)=' "$MSH_TMP" || fail "Το hardened προσωρινό .msh περιέχει απαγορευμένο update/dump flag."
+echo "ΕΠΙΤΥΧΙΑ: Εφαρμόστηκε local ephemeral policy: disableUpdate + noUpdateCoreModule, χωρίς αλλαγή Mesh identity/server fields."
+
+command -v setsid >/dev/null 2>&1 || fail "Λείπει το isolated process-session helper από το add-on runtime."
+echo "ΕΠΙΤΥΧΙΑ: Το verified MeshAgent θα ξεκινήσει ως foreground process χωρίς arguments και χωρίς -install."
 START_TS="$(date +%s)"
-( cd "$RUNTIME_DIR" && exec script -q -e -c './meshagent -connect' /dev/null >"$AGENT_LOG" 2>&1 ) &
+(
+  cd "$RUNTIME_DIR"
+  export HOME="$RUNTIME_DIR"
+  export TMPDIR="$RUNTIME_DIR"
+  export XDG_CONFIG_HOME="$RUNTIME_DIR"
+  export XDG_CACHE_HOME="$RUNTIME_DIR"
+  exec setsid ./meshagent >"$AGENT_LOG" 2>&1
+) &
 AGENT_PID=$!
 printf '%s\n' "$AGENT_PID" > "$AGENT_PID_FILE"
 sleep 3
@@ -644,7 +673,7 @@ if ! kill -0 "$AGENT_PID" 2>/dev/null; then
   RESULT_CODE="startup_failed"
 else
   RESULT_CODE="completed"
-  echo "ΕΠΙΤΥΧΙΑ: Το MeshAgent -connect ξεκίνησε μέσα στο απομονωμένο add-on runtime."
+  echo "ΕΠΙΤΥΧΙΑ: Το MeshAgent ξεκίνησε ως ephemeral foreground process μέσα στο απομονωμένο add-on runtime."
   echo "Θα τερματιστεί υποχρεωτικά έως ${EXECUTION_MAX_RUNTIME}s ή νωρίτερα σε revoke/expiry/watch failure."
   while kill -0 "$AGENT_PID" 2>/dev/null; do
     NOW_TS="$(date +%s)"
@@ -723,7 +752,7 @@ if [ "$RESULT_CODE" != "completed" ]; then
 fi
 [ "$REPORT_OK" = "true" ] || fail "Το MeshAgent τερματίστηκε και καθαρίστηκε, αλλά απέτυχε το Phase F completion audit report."
 
-echo "ΕΠΙΤΥΧΙΑ: Το MeshAgent -connect τερματίστηκε υποχρεωτικά μετά από ${RUNTIME_SECONDS}s και όλα τα runtime files διαγράφηκαν."
+echo "ΕΠΙΤΥΧΙΑ: Το ephemeral foreground MeshAgent τερματίστηκε υποχρεωτικά μετά από ${RUNTIME_SECONDS}s και όλα τα runtime files διαγράφηκαν."
 echo "Δεν έγινε install/service persistence. Δεν έγινε δεύτερη εκτέλεση."
 echo "MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE"
 echo "CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ"
