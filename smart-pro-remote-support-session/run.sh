@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.0"
+VERSION="0.7.1"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
@@ -41,6 +41,24 @@ fail() {
   echo "ΣΦΑΛΜΑ: $1"
   echo "Η ροή σταμάτησε fail-closed. Τυχόν Phase F process τερματίζεται από το cleanup trap και τα προσωρινά runtime files διαγράφονται."
   exit 1
+}
+
+classify_startup_failure() {
+  STARTUP_CATEGORY="unknown_startup_exit"
+  [ -f "$AGENT_LOG" ] || return 0
+  if grep -Eqi 'permission denied|operation not permitted|text file busy' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="execution_permission_denied"
+  elif grep -Eqi 'error loading shared librar|symbol not found|relocation error|version .* not found' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="runtime_library_incompatible"
+  elif grep -Eqi 'no such file or directory|not found' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="loader_or_runtime_missing"
+  elif grep -Eqi 'bad web cert hash|certificate.*(error|fail|invalid)|tls.*(error|fail)' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="meshcentral_tls_or_certificate_rejected"
+  elif grep -Eqi 'server url:|device group:|press ctrl-c to exit' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="connect_mode_started_then_exited"
+  elif grep -Eqi 'unable to connect|connection refused|network is unreachable|name or service not known|temporary failure in name resolution|connect.*(fail|error)' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="meshcentral_connection_failed"
+  fi
 }
 
 url_origin() {
@@ -524,8 +542,12 @@ START_TS="$(date +%s)"
 AGENT_PID=$!
 printf '%s\n' "$AGENT_PID" > "$AGENT_PID_FILE"
 sleep 3
+STARTUP_EXIT_CODE=""
+STARTUP_CATEGORY=""
 if ! kill -0 "$AGENT_PID" 2>/dev/null; then
   set +e; wait "$AGENT_PID"; AGENT_RC=$?; set -e
+  STARTUP_EXIT_CODE="$AGENT_RC"
+  classify_startup_failure
   AGENT_PID=""
   RESULT_CODE="startup_failed"
 else
@@ -601,6 +623,10 @@ rm -f "$EXECUTION_REPORT_RESPONSE"
 EXPECTED_AGENT_SHA=""
 EXPECTED_AGENT_BYTES=""
 if [ "$RESULT_CODE" != "completed" ]; then
+  if [ "$RESULT_CODE" = "startup_failed" ]; then
+    echo "ΔΙΑΓΝΩΣΗ Phase F: startup_failed; exit_code=${STARTUP_EXIT_CODE:-unknown}; category=${STARTUP_CATEGORY:-unknown_startup_exit}."
+    echo "Το raw MeshAgent output δεν εμφανίζεται για να μην εκτεθούν runtime στοιχεία ή secrets."
+  fi
   fail "Η controlled Phase F execution τερματίστηκε fail-closed (${RESULT_CODE})."
 fi
 [ "$REPORT_OK" = "true" ] || fail "Το MeshAgent τερματίστηκε και καθαρίστηκε, αλλά απέτυχε το Phase F completion audit report."

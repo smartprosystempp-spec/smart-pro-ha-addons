@@ -1,8 +1,8 @@
-# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.0
+# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.1
 
 ## Phase F — Controlled MeshAgent Execution
 
-Η 0.7.0 είναι το πρώτο build που επιτρέπεται να εκτελέσει MeshAgent, αλλά μόνο μετά από ολόκληρη την επαληθευμένη Phase D/E αλυσίδα και ξεχωριστή one-time Phase F Admin όπλιση.
+Η 0.7.1 είναι το πρώτο build που επιτρέπεται να εκτελέσει MeshAgent, αλλά μόνο μετά από ολόκληρη την επαληθευμένη Phase D/E αλυσίδα και ξεχωριστή one-time Phase F Admin όπλιση.
 
 Το MeshAgent εκτελείται μόνο με `-connect`, μέσα στο απομονωμένο Home Assistant add-on runtime, με `host_network: false`, χωρίς πρόσθετα host mounts/privileges και χωρίς install/service persistence. Το binary και το `.msh` υπάρχουν μόνο προσωρινά στο `/tmp`, το binary ξαναελέγχεται με SHA-256 αμέσως πριν το `chmod 700`, και υπάρχει hard runtime 60 δευτερολέπτων.
 

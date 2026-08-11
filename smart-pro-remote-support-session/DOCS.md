@@ -1,7 +1,7 @@
-# Controlled live QA — Phase F 0.7.0
+# Controlled live QA — Phase F 0.7.1
 
-1. Keep the public Smart Pro site locked while installing Broker 0.9.0 and add-on 0.7.0.
-2. Confirm Broker Vault READY + AGENTS READY and Home Assistant 0.7.0 stopped/manual-only.
+1. Keep the public Smart Pro site locked while installing Broker 0.9.0 and add-on 0.7.1.
+2. Confirm Broker Vault READY + AGENTS READY and Home Assistant 0.7.1 stopped/manual-only.
 3. Create a fresh 60-minute session code. Save it in Home Assistant.
 4. Arm Phase E, then arm Phase F for exactly that session.
 5. Temporarily unlock `smart-pro-system.gr`.

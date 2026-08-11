@@ -1,3 +1,14 @@
+# Changelog
+
+## 0.7.1 — Phase F Startup Diagnostics Hotfix
+
+- Δεν αλλάζει το Phase F authorization/execution boundary.
+- Δεν προσθέτει δεύτερη εκτέλεση, install, service persistence, host mounts ή privileged mode.
+- Σε `startup_failed` καταγράφει μόνο ασφαλή διάγνωση: process exit code και κατηγορία αποτυχίας.
+- Το raw MeshAgent runtime output δεν εμφανίζεται και εξακολουθεί να διαγράφεται στο cleanup.
+- Οι κατηγορίες διάγνωσης καλύπτουν permission/noexec, loader/runtime library, TLS/certificate, connection και early-exit περιπτώσεις.
+- Παραμένει fail-closed με mandatory cleanup και Phase F audit report.
+
 # 0.7.0 — Controlled MeshAgent Execution Phase F
 
 - First controlled MeshAgent execution build.
@@ -10,7 +21,6 @@
 - Mandatory PID/process cleanup and deletion of binary, `.msh`, log and db sidecars.
 - Final execution report is sent to Broker without tickets/secrets in logs.
 
-# Changelog
 
 ## 0.6.0 — Activation Authorization Readiness Phase E
 - Keeps the full Phase D secure `.msh` and agent-binary verification chain.
