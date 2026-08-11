@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Ελεγχόμενος έλεγχος προσωρινού κωδικού συνεδρίας μέσω Smart Pro Broker. Η 0.2.0 δεν ενεργοποιεί ακόμη πραγματικό remote access."
-version: "0.2.0"
+description: "Temporary Bootstrap Phase A μέσω Smart Pro Broker. Η 0.3.0 ελέγχει one-time bootstrap ticket χωρίς να ενεργοποιεί ακόμη πραγματικό remote access."
+version: "0.3.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64
