@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Controlled MeshAgent Execution Phase F startup diagnostics hotfix μέσω Smart Pro Broker. Η 0.7.1 απαιτεί ξεχωριστή Admin όπλιση Phase E + F και εκτελεί μόνο προσωρινό MeshAgent -connect έως 60s μέσα στο απομονωμένο add-on runtime, χωρίς install/service persistence."
-version: "0.7.1"
+description: "Controlled MeshAgent Execution Phase F runtime compatibility + one-shot safety hotfix μέσω Smart Pro Broker. Η 0.7.2 χρησιμοποιεί glibc-compatible container runtime, προελέγχει τον ELF loader και μπλοκάρει αυτόματη δεύτερη προσπάθεια για τον ίδιο session code."
+version: "0.7.2"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

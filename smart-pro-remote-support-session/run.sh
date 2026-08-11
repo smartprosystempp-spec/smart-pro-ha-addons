@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.1"
+VERSION="0.7.2"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
@@ -17,6 +17,9 @@ EXECUTION_CONSUME_RESPONSE="/tmp/smart-pro-execution-consume-response.json"
 EXECUTION_WATCH_RESPONSE="/tmp/smart-pro-execution-watch-response.json"
 EXECUTION_REPORT_RESPONSE="/tmp/smart-pro-execution-report-response.json"
 AGENT_PID=""
+RUN_GUARD_KEY_FILE="/data/.smart-pro-phase-f-one-shot.key"
+RUN_GUARD_STATE_FILE="/data/.smart-pro-phase-f-last-attempt"
+RUN_GUARD_FINGERPRINT=""
 
 umask 077
 ulimit -c 0 2>/dev/null || true
@@ -40,7 +43,32 @@ trap 'exit 130' INT
 fail() {
   echo "ΣΦΑΛΜΑ: $1"
   echo "Η ροή σταμάτησε fail-closed. Τυχόν Phase F process τερματίζεται από το cleanup trap και τα προσωρινά runtime files διαγράφονται."
-  exit 1
+  echo "ONE-SHOT SAFETY: Η αποτυχία θεωρείται χειρισμένη και το add-on τερματίζει καθαρά χωρίς αυτόματη δεύτερη execution προσπάθεια."
+  exit 0
+}
+
+activate_one_shot_guard() {
+  [ -d /data ] || fail "Δεν είναι διαθέσιμο το persistent /data για το Phase F one-shot guard."
+  if [ ! -s "$RUN_GUARD_KEY_FILE" ]; then
+    GUARD_TMP="${RUN_GUARD_KEY_FILE}.tmp.$$"
+    head -c 32 /dev/urandom | base64 | tr -d '\n' > "$GUARD_TMP" || fail "Δεν ήταν δυνατή η δημιουργία τοπικού one-shot guard key."
+    chmod 600 "$GUARD_TMP" 2>/dev/null || true
+    mv -f "$GUARD_TMP" "$RUN_GUARD_KEY_FILE" || fail "Δεν ήταν δυνατή η αποθήκευση του one-shot guard key."
+  fi
+  GUARD_SECRET="$(cat "$RUN_GUARD_KEY_FILE" 2>/dev/null || true)"
+  [ -n "$GUARD_SECRET" ] || fail "Το one-shot guard key είναι κενό."
+  RUN_GUARD_FINGERPRINT="$(printf '%s|%s|%s' "$GUARD_SECRET" "$BROKER_URL" "$SESSION_CODE" | sha256sum | awk '{print $1}')"
+  GUARD_SECRET=""
+  if [ -s "$RUN_GUARD_STATE_FILE" ] && [ "$(cat "$RUN_GUARD_STATE_FILE" 2>/dev/null || true)" = "$RUN_GUARD_FINGERPRINT" ]; then
+    SESSION_CODE=""
+    echo "ONE-SHOT GUARD: Ο ίδιος session code έχει ήδη επιχειρηθεί σε αυτό το add-on. Δεν γίνεται νέα επικοινωνία με Broker και δεν εκτελείται MeshAgent."
+    echo "Για νέα ελεγχόμενη προσπάθεια απαιτείται fresh session code."
+    exit 0
+  fi
+  GUARD_STATE_TMP="${RUN_GUARD_STATE_FILE}.tmp.$$"
+  printf '%s\n' "$RUN_GUARD_FINGERPRINT" > "$GUARD_STATE_TMP" || fail "Δεν ήταν δυνατή η εγγραφή του one-shot guard state."
+  chmod 600 "$GUARD_STATE_TMP" 2>/dev/null || true
+  mv -f "$GUARD_STATE_TMP" "$RUN_GUARD_STATE_FILE" || fail "Δεν ήταν δυνατή η ενεργοποίηση του one-shot guard."
 }
 
 classify_startup_failure() {
@@ -94,6 +122,8 @@ BROKER_ORIGIN="$(url_origin "$BROKER_URL")"
 [ -n "$SESSION_CODE" ] || fail "Δεν έχει συμπληρωθεί προσωρινός κωδικός συνεδρίας."
 SESSION_CODE="$(printf '%s' "$SESSION_CODE" | tr '[:lower:]' '[:upper:]' | tr -cd 'A-Z0-9-')"
 printf '%s' "$SESSION_CODE" | grep -Eq '^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$' || fail "Ο κωδικός δεν έχει την αναμενόμενη μορφή SP-XXXX-XXXX."
+
+activate_one_shot_guard
 
 VALIDATE_PAYLOAD="$(jq -n \
   --arg code "$SESSION_CODE" \
@@ -532,6 +562,12 @@ echo "ΕΠΙΤΥΧΙΑ: Phase F execution authorization καταναλώθηκε
 echo ""
 
 echo "8/8 Ελεγχόμενη προσωρινή εκτέλεση MeshAgent -connect και υποχρεωτικός τερματισμός..."
+# Static ELF runtime-loader compatibility check before any executable permission.
+ELF_INTERP="$(readelf -l "$AGENT_TMP" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \([^]]*\)\].*/\1/p' | head -n 1)"
+if [ -n "$ELF_INTERP" ]; then
+  [ -x "$ELF_INTERP" ] || fail "Ο απαιτούμενος ELF runtime loader του verified MeshAgent δεν υπάρχει στο add-on runtime."
+fi
+echo "ΕΠΙΤΥΧΙΑ: Το add-on runtime είναι συμβατό με τον ELF loader του verified MeshAgent."
 # Last-second integrity check immediately before changing executable permission.
 PREEXEC_SHA="$(sha256sum "$AGENT_TMP" | awk '{print $1}')"
 [ "$PREEXEC_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το verified MeshAgent άλλαξε πριν την εκτέλεση."

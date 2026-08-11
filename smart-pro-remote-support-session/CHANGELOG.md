@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.2 — Phase F Runtime Compatibility & One-Shot Safety Hotfix
+
+- Αντιμετωπίζει το live `startup_failed; exit_code=127; category=loader_or_runtime_missing`.
+- Αλλάζει το add-on container από Alpine/musl σε Debian bookworm-slim (glibc-compatible) χωρίς host mounts, privileged mode ή host networking.
+- Προσθέτει static `readelf` check του PT_INTERP/ELF runtime loader πριν από οποιοδήποτε `chmod`.
+- Προσθέτει persistent one-shot guard στο `/data`: ο ίδιος session code δεν μπορεί να προκαλέσει δεύτερη Broker/Phase F execution προσπάθεια μετά από Supervisor/container restart.
+- Οι χειρισμένες fail-closed καταλήξεις τερματίζουν καθαρά μετά το mandatory cleanup ώστε να αποφεύγεται restart loop.
+- Παραμένει ακριβώς ένα `MeshAgent -connect`, έως 60s, χωρίς `-install`, service persistence ή automatic restart.
+
 ## 0.7.1 — Phase F Startup Diagnostics Hotfix
 
 - Δεν αλλάζει το Phase F authorization/execution boundary.

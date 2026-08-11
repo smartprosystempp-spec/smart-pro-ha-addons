@@ -1,11 +1,9 @@
-# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.1
+# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.2
 
-## Phase F — Controlled MeshAgent Execution
+Phase F runtime compatibility + one-shot safety hotfix.
 
-Η 0.7.1 είναι το πρώτο build που επιτρέπεται να εκτελέσει MeshAgent, αλλά μόνο μετά από ολόκληρη την επαληθευμένη Phase D/E αλυσίδα και ξεχωριστή one-time Phase F Admin όπλιση.
+Η 0.7.2 διατηρεί ολόκληρη την επαληθευμένη αλυσίδα Phase D/E/F, αλλά μεταφέρει το απομονωμένο add-on runtime σε glibc-compatible Debian ώστε το generic Linux MeshAgent να μπορεί να φορτωθεί σωστά. Πριν από `chmod` γίνεται static ELF loader check.
 
-Το MeshAgent εκτελείται μόνο με `-connect`, μέσα στο απομονωμένο Home Assistant add-on runtime, με `host_network: false`, χωρίς πρόσθετα host mounts/privileges και χωρίς install/service persistence. Το binary και το `.msh` υπάρχουν μόνο προσωρινά στο `/tmp`, το binary ξαναελέγχεται με SHA-256 αμέσως πριν το `chmod 700`, και υπάρχει hard runtime 60 δευτερολέπτων.
+Για ασφάλεια υπάρχει persistent one-shot guard: ο ίδιος temporary session code δεν μπορεί να εκτελέσει δεύτερη Phase F προσπάθεια μετά από container/Supervisor restart. Για νέα προσπάθεια απαιτείται fresh session code και νέα Admin όπλιση.
 
-Κατά την εκτέλεση ο client κάνει watchdog polling στον Broker. Revoke, expiry, αλλαγή state ή watch failure οδηγεί σε fail-closed τερματισμό. Στο τέλος διαγράφονται binary, `.msh`, pid/log/db sidecars και αποστέλλεται τελικό audit report χωρίς secrets.
-
-**Η Phase F δεν είναι ακόμη operator remote-support QA.** Το πρώτο live test ελέγχει μόνο lifecycle: start → temporary MeshCentral connect → watchdog → mandatory termination → cleanup.
+Επιτρέπεται μόνο προσωρινό `MeshAgent -connect` έως 60s. Δεν υπάρχει `-install`, service persistence, automatic restart, host networking, host filesystem mount ή privileged mode.
