@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.5 — Phase F PTY Connect Compatibility Hotfix
+
+- Βασίζεται απευθείας στην 0.7.4 και διατηρεί canonical `meshagent` + `meshagent.msh` layout.
+- Διατηρεί ακριβώς μία επιτρεπόμενη εντολή MeshAgent: `./meshagent -connect`.
+- Εκτελεί το επίσημο text/manual connect mode μέσα σε isolated pseudo-terminal μέσω `script` (util-linux), χωρίς operator input.
+- Στοχεύει το live 0.7.3 symptom `startup_failed; exit_code=0` όπου το headless/background `-connect` τερμάτιζε καθαρά σχεδόν αμέσως.
+- Το raw MeshAgent output εξακολουθεί να μη δημοσιεύεται και διαγράφεται στο mandatory cleanup.
+- Διατηρεί Debian/glibc, strict header/SHA/bytes/ELF/loader checks, Admin-armed one-time Phase E/F tickets, last-second SHA, chmod 700 μόνο στο verified binary, one-shot guard, launch telemetry και max 60s Broker watchdog.
+- Δεν αλλάζει Broker 0.9.0, `host_network:false`, privileges ή persistence boundary.
+- Δεν χρησιμοποιεί no-argument managed invocation και δεν προσθέτει `-install`/service path.
+
 ## 0.7.4 — Phase F Canonical Runtime Layout & Launch Telemetry Hotfix
 
 - Αντιμετωπίζει το live 0.7.3 `startup_failed; exit_code=0; category=unknown_startup_exit`.

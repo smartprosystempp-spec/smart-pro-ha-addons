@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.4"
+VERSION="0.7.5"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
@@ -21,7 +21,7 @@ AGENT_PID=""
 RUN_GUARD_KEY_FILE="/data/.smart-pro-phase-f-one-shot.key"
 RUN_GUARD_STATE_FILE="/data/.smart-pro-phase-f-last-attempt"
 RUN_GUARD_FINGERPRINT=""
-LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v074"
+LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v075"
 
 umask 077
 ulimit -c 0 2>/dev/null || true
@@ -627,8 +627,10 @@ PREEXEC_SHA="$(sha256sum "$AGENT_TMP" | awk '{print $1}')"
 [ "$PREEXEC_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το verified MeshAgent άλλαξε πριν την εκτέλεση."
 chmod 700 "$AGENT_TMP" || fail "Δεν ήταν δυνατή η προσωρινή executable permission στο verified binary."
 
+command -v script >/dev/null 2>&1 || fail "Λείπει το isolated PTY helper από το add-on runtime."
+echo "ΕΠΙΤΥΧΙΑ: Το προσωρινό -connect θα εκτελεστεί σε απομονωμένο pseudo-terminal χωρίς operator input."
 START_TS="$(date +%s)"
-( cd "$RUNTIME_DIR" && exec ./meshagent -connect >"$AGENT_LOG" 2>&1 ) &
+( cd "$RUNTIME_DIR" && exec script -q -e -c './meshagent -connect' /dev/null >"$AGENT_LOG" 2>&1 ) &
 AGENT_PID=$!
 printf '%s\n' "$AGENT_PID" > "$AGENT_PID_FILE"
 sleep 3

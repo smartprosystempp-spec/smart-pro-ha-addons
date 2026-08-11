@@ -1,11 +1,11 @@
-# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.4
+# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.5
 
-Phase F canonical MeshAgent runtime-layout + launch telemetry hotfix.
+Phase F PTY-connect compatibility hotfix.
 
-Η 0.7.4 διατηρεί όλα τα security controls της 0.7.3 και αλλάζει μόνο το τελευταίο runtime boundary ώστε να αντιγράφει το canonical Linux manual-connect layout του MeshAgent: ιδιωτικός προσωρινός φάκελος με αρχεία ακριβώς `meshagent` και `meshagent.msh`, `cd` στον ίδιο φάκελο και μία μόνο εκτέλεση `./meshagent -connect`.
+Η 0.7.5 βασίζεται απευθείας στην 0.7.4. Διατηρεί το canonical runtime layout `meshagent` + `meshagent.msh` στον ίδιο ιδιωτικό προσωρινό φάκελο και **δεν αλλάζει** το Phase F authorization contract: επιτρέπεται ακριβώς μία προσωρινή εκτέλεση `./meshagent -connect`.
 
-Προσθέτει επίσης persistent, μη μυστικό launch counter στο `/data`, ώστε κάθε πραγματική εκκίνηση του add-on process να αφήνει σαφή γραμμή `LAUNCH SAFETY` στο log. Το υπάρχον one-shot guard εξακολουθεί να μπλοκάρει τον ίδιο session code πριν από οποιοδήποτε Broker request.
+Η αλλαγή είναι μόνο στον τρόπο που φιλοξενείται το επίσημο text/manual connect mode: το `-connect` εκτελείται μέσω isolated pseudo-terminal (`script` από util-linux), χωρίς operator input και χωρίς να εμφανίζεται raw MeshAgent output. Αυτό δοκιμάζει στοχευμένα την υπόθεση ότι το προηγούμενο headless/background stdin επέστρεφε άμεσα EOF και οδηγούσε σε clean `exit_code=0`.
 
-Παραμένουν: Debian/glibc runtime, strict SHA/bytes/ELF/architecture checks, `chmod 700` μόνο μετά το Phase F consume, Broker watchdog έως 60s, fail-closed cleanup, `boot: manual_only`, `startup: once`, `host_network:false`, χωρίς host mounts/privileged mode.
+Παραμένουν: Debian/glibc runtime, strict header/SHA/bytes/ELF/loader checks, Admin-armed Phase E/F one-time tickets, last-second SHA, `chmod 700` μόνο στο verified binary, persistent one-shot guard, launch counter, Broker watchdog έως 60s και mandatory cleanup.
 
-Δεν υπάρχει `-install`, service persistence ή δεύτερη επιτρεπόμενη MeshAgent execution για τον ίδιο session code.
+Δεν υπάρχει `-install`, service persistence, host mount, privileged mode ή host networking. Η 0.7.5 δεν πειράζει το ξεχωριστό managed add-on 1.0.1.

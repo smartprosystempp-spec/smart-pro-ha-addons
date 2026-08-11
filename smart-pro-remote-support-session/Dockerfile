@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim
 
-ARG BUILD_VERSION="0.7.4"
+ARG BUILD_VERSION="0.7.5"
 ARG BUILD_ARCH
 
 RUN apt-get update \
@@ -9,6 +9,7 @@ RUN apt-get update \
         curl \
         jq \
         binutils \
+        util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 COPY run.sh /
