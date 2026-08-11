@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Controlled MeshAgent Execution Phase F runtime compatibility + one-shot safety hotfix μέσω Smart Pro Broker. Η 0.7.2 χρησιμοποιεί glibc-compatible container runtime, προελέγχει τον ELF loader και μπλοκάρει αυτόματη δεύτερη προσπάθεια για τον ίδιο session code."
-version: "0.7.2"
+description: "Controlled MeshAgent Execution Phase F runtime compatibility + one-shot safety hotfix μέσω Smart Pro Broker. Η 0.7.3 διατηρεί το glibc-compatible runtime και το one-shot guard της 0.7.2 και διορθώνει portable case-insensitive parsing των HTTP response headers του Broker (HTTP/2/lowercase safe)."
+version: "0.7.3"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

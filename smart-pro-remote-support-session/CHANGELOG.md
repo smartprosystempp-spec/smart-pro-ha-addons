@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3 — Phase F HTTP Header Parser Portability Hotfix
+
+- Διορθώνει το live 0.7.2 fail-closed στο Step 4: `binary response architecture header` mismatch.
+- Root cause: το Debian runtime χρησιμοποιεί `mawk`, όπου το `IGNORECASE=1` δεν είναι portable· HTTP/2 μπορεί να αποδώσει response header names σε lowercase.
+- Αντικαθιστά το header parser με POSIX-compatible `tolower()` comparison, ώστε header names να αντιμετωπίζονται σωστά case-insensitively όπως απαιτεί το HTTP.
+- Ελέγχει architecture / SHA-256 / execution headers με το ίδιο αυστηρό value matching.
+- Διατηρεί αμετάβλητα Debian/glibc runtime, ELF loader preflight, persistent one-shot guard, ένα μόνο `MeshAgent -connect`, 60s watchdog και mandatory cleanup.
+- Δεν αλλάζει Broker, tickets, Phase E/F arming, persistence boundary ή privileges.
+
 ## 0.7.2 — Phase F Runtime Compatibility & One-Shot Safety Hotfix
 
 - Αντιμετωπίζει το live `startup_failed; exit_code=127; category=loader_or_runtime_missing`.

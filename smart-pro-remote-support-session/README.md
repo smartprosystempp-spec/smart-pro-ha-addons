@@ -1,9 +1,9 @@
-# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.2
+# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.3
 
-Phase F runtime compatibility + one-shot safety hotfix.
+Phase F HTTP header parser portability hotfix.
 
-Η 0.7.2 διατηρεί ολόκληρη την επαληθευμένη αλυσίδα Phase D/E/F, αλλά μεταφέρει το απομονωμένο add-on runtime σε glibc-compatible Debian ώστε το generic Linux MeshAgent να μπορεί να φορτωθεί σωστά. Πριν από `chmod` γίνεται static ELF loader check.
+Η 0.7.3 διατηρεί το Debian/glibc runtime compatibility και το persistent one-shot guard της 0.7.2. Διορθώνει αποκλειστικά την ανάγνωση των Broker binary response headers ώστε τα HTTP header names να ελέγχονται case-insensitively με portable `awk tolower()` και να λειτουργούν σωστά και όταν HTTP/2 τα αποδίδει lowercase.
 
-Για ασφάλεια υπάρχει persistent one-shot guard: ο ίδιος temporary session code δεν μπορεί να εκτελέσει δεύτερη Phase F προσπάθεια μετά από container/Supervisor restart. Για νέα προσπάθεια απαιτείται fresh session code και νέα Admin όπλιση.
+Οι τιμές architecture, SHA-256 και execution εξακολουθούν να απαιτούν ακριβή αντιστοίχιση. Πριν από execution παραμένουν οι έλεγχοι ELF/SHA/bytes/loader. Επιτρέπεται μόνο προσωρινό `MeshAgent -connect` έως 60s.
 
-Επιτρέπεται μόνο προσωρινό `MeshAgent -connect` έως 60s. Δεν υπάρχει `-install`, service persistence, automatic restart, host networking, host filesystem mount ή privileged mode.
+Δεν υπάρχει `-install`, service persistence, automatic restart, host networking, host filesystem mount ή privileged mode.

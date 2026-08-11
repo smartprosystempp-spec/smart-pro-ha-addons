@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.2"
+VERSION="0.7.3"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
@@ -343,9 +343,28 @@ AGENT_PAYLOAD=""
 [ -s "$AGENT_TMP" ] || fail "Το προσωρινό agent binary είναι κενό."
 
 grep -Eiq '^Content-Type:[[:space:]]*application/octet-stream([[:space:];]|$)' "$AGENT_HEADERS" || fail "Το agent response δεν έχει ασφαλές binary Content-Type."
-HEADER_ARCH="$(awk 'BEGIN{IGNORECASE=1} /^X-Smart-Pro-Agent-Architecture:/{gsub("\r",""); sub(/^[^:]*:[[:space:]]*/,""); print; exit}' "$AGENT_HEADERS")"
-HEADER_SHA="$(awk 'BEGIN{IGNORECASE=1} /^X-Smart-Pro-Agent-SHA256:/{gsub("\r",""); sub(/^[^:]*:[[:space:]]*/,""); print; exit}' "$AGENT_HEADERS")"
-HEADER_EXEC="$(awk 'BEGIN{IGNORECASE=1} /^X-Smart-Pro-Agent-Execution:/{gsub("\r",""); sub(/^[^:]*:[[:space:]]*/,""); print; exit}' "$AGENT_HEADERS")"
+header_value() {
+  WANTED_HEADER="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  awk -v wanted="$WANTED_HEADER" '
+    {
+      line=$0
+      sub(/\r$/, "", line)
+      pos=index(line, ":")
+      if (pos > 0) {
+        name=substr(line, 1, pos - 1)
+        if (tolower(name) == wanted) {
+          value=substr(line, pos + 1)
+          sub(/^[[:space:]]*/, "", value)
+          print value
+          exit
+        }
+      }
+    }' "$AGENT_HEADERS"
+}
+
+HEADER_ARCH="$(header_value 'X-Smart-Pro-Agent-Architecture')"
+HEADER_SHA="$(header_value 'X-Smart-Pro-Agent-SHA256')"
+HEADER_EXEC="$(header_value 'X-Smart-Pro-Agent-Execution')"
 [ "$HEADER_ARCH" = "$ARCHITECTURE" ] || fail "Το binary response architecture header δεν συμφωνεί με το host."
 [ "$HEADER_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το binary response SHA header δεν συμφωνεί με το Agent Delivery Ticket."
 [ "$HEADER_EXEC" = "disabled" ] || fail "Το binary response δεν δηλώνει execution disabled."
