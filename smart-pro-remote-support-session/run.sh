@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.6"
+VERSION="0.7.7"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
@@ -18,15 +18,22 @@ EXECUTION_CONSUME_RESPONSE="/tmp/smart-pro-execution-consume-response.json"
 EXECUTION_WATCH_RESPONSE="/tmp/smart-pro-execution-watch-response.json"
 EXECUTION_REPORT_RESPONSE="/tmp/smart-pro-execution-report-response.json"
 AGENT_PID=""
+DEADLINE_GUARD_PID=""
+HARD_DEADLINE_MARKER="$RUNTIME_DIR/.hard-deadline-reached"
 RUN_GUARD_KEY_FILE="/data/.smart-pro-phase-f-one-shot.key"
 RUN_GUARD_STATE_FILE="/data/.smart-pro-phase-f-last-attempt"
 RUN_GUARD_FINGERPRINT=""
-LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v076"
+LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v077"
 
 umask 077
 ulimit -c 0 2>/dev/null || true
 
 cleanup() {
+  if [ -n "${DEADLINE_GUARD_PID:-}" ] && kill -0 "$DEADLINE_GUARD_PID" 2>/dev/null; then
+    kill -TERM "$DEADLINE_GUARD_PID" 2>/dev/null || true
+    wait "$DEADLINE_GUARD_PID" 2>/dev/null || true
+  fi
+  DEADLINE_GUARD_PID=""
   if [ -n "${AGENT_PID:-}" ] && kill -0 "$AGENT_PID" 2>/dev/null; then
     kill -TERM "$AGENT_PID" 2>/dev/null || true
     sleep 1
@@ -651,6 +658,9 @@ echo "ΕΠΙΤΥΧΙΑ: Εφαρμόστηκε local ephemeral policy: disableUp
 
 command -v setsid >/dev/null 2>&1 || fail "Λείπει το isolated process-session helper από το add-on runtime."
 echo "ΕΠΙΤΥΧΙΑ: Το verified MeshAgent θα ξεκινήσει ως foreground process χωρίς arguments και χωρίς -install."
+HARD_KILL_GRACE=2
+SOFT_STOP_SECONDS=$((EXECUTION_MAX_RUNTIME - HARD_KILL_GRACE))
+[ "$SOFT_STOP_SECONDS" -ge 10 ] || fail "Το Phase F hard-deadline grace δεν αφήνει ασφαλές execution window."
 START_TS="$(date +%s)"
 (
   cd "$RUNTIME_DIR"
@@ -662,10 +672,25 @@ START_TS="$(date +%s)"
 ) &
 AGENT_PID=$!
 printf '%s\n' "$AGENT_PID" > "$AGENT_PID_FILE"
+(
+  sleep "$SOFT_STOP_SECONDS"
+  if kill -0 "$AGENT_PID" 2>/dev/null; then
+    printf '%s\n' "$EXECUTION_MAX_RUNTIME" > "$HARD_DEADLINE_MARKER"
+    kill -TERM "$AGENT_PID" 2>/dev/null || true
+    sleep "$HARD_KILL_GRACE"
+    kill -KILL "$AGENT_PID" 2>/dev/null || true
+  fi
+) &
+DEADLINE_GUARD_PID=$!
 sleep 3
 STARTUP_EXIT_CODE=""
 STARTUP_CATEGORY=""
 if ! kill -0 "$AGENT_PID" 2>/dev/null; then
+  if [ -n "${DEADLINE_GUARD_PID:-}" ] && kill -0 "$DEADLINE_GUARD_PID" 2>/dev/null; then
+    kill -TERM "$DEADLINE_GUARD_PID" 2>/dev/null || true
+    wait "$DEADLINE_GUARD_PID" 2>/dev/null || true
+  fi
+  DEADLINE_GUARD_PID=""
   set +e; wait "$AGENT_PID"; AGENT_RC=$?; set -e
   STARTUP_EXIT_CODE="$AGENT_RC"
   classify_startup_failure
@@ -674,11 +699,14 @@ if ! kill -0 "$AGENT_PID" 2>/dev/null; then
 else
   RESULT_CODE="completed"
   echo "ΕΠΙΤΥΧΙΑ: Το MeshAgent ξεκίνησε ως ephemeral foreground process μέσα στο απομονωμένο add-on runtime."
-  echo "Θα τερματιστεί υποχρεωτικά έως ${EXECUTION_MAX_RUNTIME}s ή νωρίτερα σε revoke/expiry/watch failure."
+  echo "HARD DEADLINE: graceful stop στα ${SOFT_STOP_SECONDS}s και υποχρεωτικό KILL fallback έως ${EXECUTION_MAX_RUNTIME}s."
+  echo "Watch/revoke παραμένουν fail-closed και μπορούν να τερματίσουν νωρίτερα."
   while kill -0 "$AGENT_PID" 2>/dev/null; do
     NOW_TS="$(date +%s)"
     ELAPSED=$((NOW_TS - START_TS))
     if [ "$ELAPSED" -ge "$EXECUTION_MAX_RUNTIME" ]; then
+      printf '%s\n' "$EXECUTION_MAX_RUNTIME" > "$HARD_DEADLINE_MARKER"
+      kill -KILL "$AGENT_PID" 2>/dev/null || true
       RESULT_CODE="completed"
       break
     fi
@@ -706,17 +734,19 @@ else
       sleep "$REMAINING"
     fi
   done
-  if ! kill -0 "$AGENT_PID" 2>/dev/null && [ "$RESULT_CODE" = "completed" ]; then
+  if ! kill -0 "$AGENT_PID" 2>/dev/null && [ "$RESULT_CODE" = "completed" ] && [ ! -s "$HARD_DEADLINE_MARKER" ]; then
     RESULT_CODE="agent_exited"
   fi
 fi
 
+if [ -n "${DEADLINE_GUARD_PID:-}" ] && kill -0 "$DEADLINE_GUARD_PID" 2>/dev/null; then
+  kill -TERM "$DEADLINE_GUARD_PID" 2>/dev/null || true
+  wait "$DEADLINE_GUARD_PID" 2>/dev/null || true
+fi
+DEADLINE_GUARD_PID=""
 if [ -n "${AGENT_PID:-}" ] && kill -0 "$AGENT_PID" 2>/dev/null; then
   kill -TERM "$AGENT_PID" 2>/dev/null || true
-  for _i in 1 2 3; do
-    kill -0 "$AGENT_PID" 2>/dev/null || break
-    sleep 1
-  done
+  sleep 1
   kill -KILL "$AGENT_PID" 2>/dev/null || true
 fi
 if [ -n "${AGENT_PID:-}" ]; then
@@ -724,7 +754,15 @@ if [ -n "${AGENT_PID:-}" ]; then
 fi
 AGENT_PID=""
 END_TS="$(date +%s)"
-RUNTIME_SECONDS=$((END_TS - START_TS))
+WALL_SECONDS=$((END_TS - START_TS))
+if [ -s "$HARD_DEADLINE_MARKER" ]; then
+  RUNTIME_SECONDS="$EXECUTION_MAX_RUNTIME"
+else
+  RUNTIME_SECONDS="$WALL_SECONDS"
+  if [ "$RUNTIME_SECONDS" -gt "$EXECUTION_MAX_RUNTIME" ]; then
+    RUNTIME_SECONDS="$EXECUTION_MAX_RUNTIME"
+  fi
+fi
 rm -rf "$RUNTIME_DIR"
 [ ! -e "$RUNTIME_DIR" ] || fail "Δεν ολοκληρώθηκε το Phase F runtime cleanup."
 
@@ -736,7 +774,7 @@ set -e
 EXECUTION_REPORT_TOKEN=""
 REPORT_PAYLOAD=""
 REPORT_OK=false
-if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_HTTP" = "200" ] && jq -e '.reported == true' "$EXECUTION_REPORT_RESPONSE" >/dev/null 2>&1; then
+if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_HTTP" = "200" ] && jq -e '.reported == true and .result_code == "completed"' "$EXECUTION_REPORT_RESPONSE" >/dev/null 2>&1; then
   REPORT_OK=true
 fi
 rm -f "$EXECUTION_REPORT_RESPONSE"
@@ -752,7 +790,10 @@ if [ "$RESULT_CODE" != "completed" ]; then
 fi
 [ "$REPORT_OK" = "true" ] || fail "Το MeshAgent τερματίστηκε και καθαρίστηκε, αλλά απέτυχε το Phase F completion audit report."
 
-echo "ΕΠΙΤΥΧΙΑ: Το ephemeral foreground MeshAgent τερματίστηκε υποχρεωτικά μετά από ${RUNTIME_SECONDS}s και όλα τα runtime files διαγράφηκαν."
+echo "ΕΠΙΤΥΧΙΑ: Το ephemeral foreground MeshAgent τερματίστηκε με audited runtime ${RUNTIME_SECONDS}s (hard max ${EXECUTION_MAX_RUNTIME}s) και όλα τα runtime files διαγράφηκαν."
+if [ "$WALL_SECONDS" -gt "$EXECUTION_MAX_RUNTIME" ]; then
+  echo "ΣΗΜΕΙΩΣΗ QA: συνολικό wall-clock μαζί με watchdog/cleanup/report preparation ήταν ${WALL_SECONDS}s· ο MeshAgent είχε ήδη τερματιστεί από το ανεξάρτητο hard deadline."
+fi
 echo "Δεν έγινε install/service persistence. Δεν έγινε δεύτερη εκτέλεση."
 echo "MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE"
 echo "CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ"

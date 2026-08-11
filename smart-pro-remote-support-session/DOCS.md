@@ -1,17 +1,23 @@
-# Smart Pro Remote Support 0.7.6 — Phase F QA
+# Smart Pro Remote Support 0.7.7 — Final Phase F Live QA
 
-## Required server
-Smart Pro Remote Session Broker 0.9.1 or later.
+Requires Smart Pro Remote Session Broker 0.9.2 or later.
 
-## Execution model
-0.7.6 intentionally changes only the final Phase F runtime mode. The previous `-connect` path exited cleanly before the watchdog window in live QA. The new contract is explicit: `ephemeral_foreground=true`, `foreground_no_install=true`, `persistence=false`.
+## What changed from successful 0.7.6
+The working ephemeral foreground MeshAgent path is unchanged. 0.7.7 only hardens the runtime boundary after live 0.7.6 proved that the device appears in MeshCentral and disconnects after the controlled window.
 
-The add-on starts `./meshagent` with no arguments from a private temporary directory. It never calls `-install`. The temporary `.msh` receives local safety overrides that disable binary self-update and remote core replacement.
+The local hard-deadline guard is independent from Broker watch polling:
+- graceful TERM at `max_runtime - 2s`;
+- KILL fallback by `max_runtime`;
+- audited runtime never reports a successful completion above the Broker maximum;
+- Broker completion must return `result_code=completed`.
 
-## Live QA checkpoint
-Use a fresh session code and fresh E/F arming. Start once only. Expected success:
+## Live checkpoint
+Use a fresh session and fresh E/F arming. Start once only. Do not open MeshCentral Remote Desktop / Terminal / Files during Phase F. Export up to 5000 log lines after the add-on stops.
+
+Expected final lines:
 
 `MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE`
+
 `CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ`
 
-Do not open remote desktop, terminal or files during this Phase F QA.
+The runtime line must show audited runtime `<= 60s` (normally 60s for the deadline test).

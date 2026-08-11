@@ -1,17 +1,16 @@
-# Smart Pro Remote Support — Temporary Session 0.7.6
+# Smart Pro Remote Support — Temporary Session 0.7.7
 
-Phase F ephemeral-foreground compatibility update.
+Phase F hard-runtime completion build. Requires Smart Pro Remote Session Broker 0.9.2+.
 
-The add-on preserves the verified session → bootstrap → .msh → agent delivery → Phase E → Phase F chain.
-After a Broker 0.9.1 one-time execution consume it runs the verified MeshAgent as an **ephemeral foreground process with no command-line install action**.
+The verified MeshAgent is executed only as an **ephemeral foreground process without arguments and without `-install`** inside the isolated Home Assistant add-on runtime. The canonical temporary `meshagent + meshagent.msh` layout and the 0.7.6 connectivity path are unchanged.
 
-Security boundary:
-- No `-install`, no service registration, no boot persistence.
-- Private `/tmp` runtime directory only; `HOME`, `TMPDIR` and XDG cache/config paths are redirected there.
-- Local `.msh` safety override forces `disableUpdate=1` and `noUpdateCoreModule=1`, and strips force/fake update and crash-dump flags.
-- Last-second SHA-256 check before chmod 700.
-- Hard Broker-controlled runtime (currently 60s), watchdog polling and fail-closed revoke/watch failure.
-- Entire runtime directory is deleted after termination.
-- Phase F does not authorize operator remote desktop, terminal or file access.
+0.7.7 adds an independent local runtime deadline: graceful TERM begins two seconds before the Broker limit and KILL is the final fallback at the configured max runtime. This deadline is independent of watch HTTP polling, so network/report cleanup cannot extend MeshAgent execution.
 
-This release requires Smart Pro Remote Session Broker 0.9.1+ for Phase F.
+Security boundary remains:
+- one-time Phase E + Phase F authorization;
+- last-second SHA-256 + ELF/loader verification;
+- `disableUpdate=1` and `noUpdateCoreModule=1`;
+- no `-install`, no service creation, no persistence;
+- no host networking/privileged mounts;
+- mandatory runtime-file cleanup;
+- one-shot session guard and launch counter.

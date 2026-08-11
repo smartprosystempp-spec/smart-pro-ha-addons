@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Controlled MeshAgent Execution Phase F ephemeral-foreground compatibility update. Η 0.7.6 διατηρεί το verified canonical meshagent + meshagent.msh layout, αλλά μετά από νέο Broker 0.9.1 contract εκτελεί το verified MeshAgent ως foreground process χωρίς arguments και χωρίς -install/service persistence, με hard 60s watchdog και πλήρες cleanup."
-version: "0.7.6"
+description: "Controlled MeshAgent Execution Phase F hard-deadline completion update. Η 0.7.7 διατηρεί το verified ephemeral foreground MeshAgent χωρίς -install/service persistence και προσθέτει ανεξάρτητο hard runtime guard: graceful TERM πριν από το όριο και KILL fallback έως το Broker max runtime, με audited runtime και πλήρες cleanup."
+version: "0.7.7"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

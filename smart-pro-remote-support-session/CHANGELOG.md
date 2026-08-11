@@ -1,3 +1,14 @@
+# 0.7.7 — Phase F Hard Runtime Deadline Completion
+
+- Βασίζεται απευθείας στην επιτυχημένη live 0.7.6 ephemeral-foreground εκτέλεση.
+- Δεν αλλάζει binary, `.msh` identity, execution mode ή MeshCentral connectivity path.
+- Προσθέτει ανεξάρτητο local hard-deadline guard: graceful TERM στα `max_runtime-2s` και KILL fallback στο ακριβές Broker max runtime.
+- Ο hard-deadline guard λειτουργεί ανεξάρτητα από το Broker watch HTTP polling, ώστε αργό watch request/cleanup να μην παρατείνει τη ζωή του MeshAgent.
+- Ξεχωρίζει audited MeshAgent runtime από συνολικό wall-clock cleanup/report χρόνο.
+- Completion report θεωρείται επιτυχές μόνο αν ο Broker επιστρέψει `reported=true` και `result_code=completed`.
+- Διατηρεί one-shot guard, launch counter, SHA/ELF/loader verification, `disableUpdate=1`, `noUpdateCoreModule=1`, no `-install`, no service persistence και mandatory cleanup.
+- Απαιτεί Broker 0.9.2+ για server-side hard-runtime completion audit.
+
 # 0.7.6 — Ephemeral Foreground Compatibility
 
 - Requires Broker 0.9.1 Phase F hardened contract.
