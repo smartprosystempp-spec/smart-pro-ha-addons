@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — Activation Authorization Readiness Phase E
+- Keeps the full Phase D secure `.msh` and agent-binary verification chain.
+- Requires Broker 0.8.0+.
+- Requires explicit Admin arming of the exact temporary session.
+- Requests a separate one-time activation authorization only after verified agent delivery.
+- Verifies activation ticket binding to architecture, SHA-256, and exact byte count.
+- Consumes the activation ticket once and requires `execution=false` and `remote_access=false`.
+- Deletes the agent binary before requesting activation authorization.
+- Does not chmod or execute MeshAgent.
+- Does not create tunnel, Router, or remote access.
+- Success checkpoint: `ACTIVATION AUTHORIZED — NOT EXECUTED`.
+
+
 ## 0.5.0 — Secure Agent Delivery Phase D
 - Απαιτεί Smart Pro Remote Session Broker 0.7.0+ με Vault `READY` και `AGENTS READY`.
 - Διατηρεί το Secure Bootstrap Delivery της 0.4.0.

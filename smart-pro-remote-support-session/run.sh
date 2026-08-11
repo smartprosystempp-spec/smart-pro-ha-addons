@@ -1,19 +1,21 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
 MSH_TMP="/tmp/smart-pro-temporary-bootstrap.msh"
 AGENT_TMP="/tmp/smart-pro-meshagent-delivery.bin"
 AGENT_HEADERS="/tmp/smart-pro-meshagent-delivery.headers"
+ACTIVATION_REQUEST_RESPONSE="/tmp/smart-pro-activation-request-response.json"
+ACTIVATION_CONSUME_RESPONSE="/tmp/smart-pro-activation-consume-response.json"
 
 umask 077
 ulimit -c 0 2>/dev/null || true
 
 cleanup() {
-  rm -f "$VALIDATE_RESPONSE" "$CONSUME_RESPONSE" "$MSH_TMP" "$AGENT_TMP" "$AGENT_HEADERS"
+  rm -f "$VALIDATE_RESPONSE" "$CONSUME_RESPONSE" "$MSH_TMP" "$AGENT_TMP" "$AGENT_HEADERS" "$ACTIVATION_REQUEST_RESPONSE" "$ACTIVATION_CONSUME_RESPONSE"
 }
 trap cleanup EXIT
 trap 'exit 143' HUP TERM
@@ -32,13 +34,13 @@ url_origin() {
 case "$(uname -m 2>/dev/null || true)" in
   aarch64|arm64) ARCHITECTURE="aarch64"; EXPECTED_MACHINE_HEX="b700" ;;
   x86_64|amd64) ARCHITECTURE="amd64"; EXPECTED_MACHINE_HEX="3e00" ;;
-  *) fail "Η αρχιτεκτονική αυτού του Home Assistant host δεν υποστηρίζεται για Phase D." ;;
+  *) fail "Η αρχιτεκτονική αυτού του Home Assistant host δεν υποστηρίζεται για Phase E." ;;
 esac
 
 echo "===================================================="
 echo "  Smart Pro Remote Support - Προσωρινή Συνεδρία"
 echo "===================================================="
-echo "Κατάσταση: SECURE AGENT DELIVERY / PHASE D ${VERSION}"
+echo "Κατάσταση: ACTIVATION AUTHORIZATION READINESS / PHASE E ${VERSION}"
 echo "Αρχιτεκτονική QA: ${ARCHITECTURE}"
 echo ""
 
@@ -66,7 +68,7 @@ VALIDATE_PAYLOAD="$(jq -n \
   '{code:$code, client:$client, client_version:$client_version, request_bootstrap_ticket:true}')"
 SESSION_CODE=""
 
-echo "1/4 Επικύρωση συνεδρίας και αίτημα one-time bootstrap ticket..."
+echo "1/6 Επικύρωση συνεδρίας και αίτημα one-time bootstrap ticket..."
 set +e
 VALIDATE_HTTP="$(curl \
   --silent \
@@ -123,7 +125,7 @@ echo "Εκδόθηκε βραχύβιο bootstrap ticket χωρίς να εμφ�
 [ -n "$BOOTSTRAP_EXPIRES" ] && echo "Λήξη bootstrap ticket (UTC): ${BOOTSTRAP_EXPIRES}"
 echo ""
 
-echo "2/4 Κατανάλωση bootstrap ticket και επαλήθευση READY .msh..."
+echo "2/6 Κατανάλωση bootstrap ticket και επαλήθευση READY .msh..."
 CONSUME_PAYLOAD="$(jq -n \
   --arg ticket "$BOOTSTRAP_TICKET" \
   --arg client "home_assistant_os" \
@@ -205,7 +207,7 @@ ACTUAL_MSH_SHA=""
 echo "ΕΠΙΤΥΧΙΑ: Το READY .msh επαληθεύτηκε και διαγράφηκε."
 echo ""
 
-echo "3/4 Έλεγχος ξεχωριστού one-time Agent Delivery Ticket..."
+echo "3/6 Έλεγχος ξεχωριστού one-time Agent Delivery Ticket..."
 AGENT_AVAILABLE="$(jq -r '.agent_delivery.available // false' "$CONSUME_RESPONSE")"
 AGENT_TICKET="$(jq -r '.agent_delivery.ticket // empty' "$CONSUME_RESPONSE")"
 AGENT_ENDPOINT="$(jq -r '.agent_delivery.endpoint // empty' "$CONSUME_RESPONSE")"
@@ -213,6 +215,9 @@ AGENT_EXPIRES="$(jq -r '.agent_delivery.expires_at // empty' "$CONSUME_RESPONSE"
 AGENT_ARCH="$(jq -r '.agent_delivery.architecture // empty' "$CONSUME_RESPONSE")"
 EXPECTED_AGENT_SHA="$(jq -r '.agent_delivery.sha256 // empty' "$CONSUME_RESPONSE")"
 EXPECTED_AGENT_BYTES="$(jq -r '.agent_delivery.bytes // 0' "$CONSUME_RESPONSE")"
+ACTIVATION_AVAILABLE="$(jq -r '.activation_authorization.available // false' "$CONSUME_RESPONSE")"
+ACTIVATION_REQUEST_ENDPOINT="$(jq -r '.activation_authorization.request_endpoint // empty' "$CONSUME_RESPONSE")"
+ACTIVATION_REQUIRES_ARM="$(jq -r '.activation_authorization.requires_admin_arm // false' "$CONSUME_RESPONSE")"
 
 [ "$AGENT_AVAILABLE" = "true" ] || fail "Ο Broker δεν επέστρεψε διαθέσιμο Agent Delivery Ticket."
 [ -n "$AGENT_TICKET" ] || fail "Λείπει το one-time Agent Delivery Ticket."
@@ -227,13 +232,22 @@ printf '%s' "$EXPECTED_AGENT_SHA" | grep -Eq '^[a-f0-9]{64}$' || fail "Το agen
 printf '%s' "$EXPECTED_AGENT_BYTES" | grep -Eq '^[0-9]+$' || fail "Το agent size metadata δεν είναι έγκυρο."
 [ "$EXPECTED_AGENT_BYTES" -ge 1048576 ] && [ "$EXPECTED_AGENT_BYTES" -le 67108864 ] || fail "Το agent size metadata είναι εκτός ασφαλών ορίων."
 jq -e '.agent_delivery.execution == false' "$CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker δεν δήλωσε ρητά execution=false για Phase D."
+[ "$ACTIVATION_AVAILABLE" = "true" ] || fail "Ο Broker δεν επέστρεψε Phase E activation authorization metadata."
+[ "$ACTIVATION_REQUIRES_ARM" = "true" ] || fail "Ο Broker δεν απαιτεί ρητή Admin όπλιση για Phase E."
+[ -n "$ACTIVATION_REQUEST_ENDPOINT" ] || fail "Λείπει το Phase E activation request endpoint."
+case "$ACTIVATION_REQUEST_ENDPOINT" in
+  https://*) ;;
+  *) fail "Το Phase E activation request endpoint δεν είναι HTTPS." ;;
+esac
+[ "$(url_origin "$ACTIVATION_REQUEST_ENDPOINT")" = "$BROKER_ORIGIN" ] || fail "Το Phase E activation endpoint δεν ανήκει στο ίδιο HTTPS origin με τον Broker."
+jq -e '.activation_authorization.execution == false and .activation_authorization.remote_access == false' "$CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker δεν κράτησε execution/remote_access κλειδωμένα για Phase E."
 rm -f "$CONSUME_RESPONSE"
 
 echo "ΕΠΙΤΥΧΙΑ: Το Agent Delivery Ticket είναι one-time, δεμένο με ${ARCHITECTURE} και execution=false."
 [ -n "$AGENT_EXPIRES" ] && echo "Λήξη agent ticket (UTC): ${AGENT_EXPIRES}"
 echo ""
 
-echo "4/4 Προσωρινή λήψη, ακεραιότητα ELF/SHA και άμεση διαγραφή agent..."
+echo "4/6 Προσωρινή λήψη, ακεραιότητα ELF/SHA και άμεση διαγραφή agent..."
 AGENT_PAYLOAD="$(jq -n \
   --arg ticket "$AGENT_TICKET" \
   --arg client "home_assistant_os" \
@@ -259,7 +273,6 @@ AGENT_HTTP="$(curl \
 CURL_RC=$?
 set -e
 
-AGENT_TICKET=""
 AGENT_PAYLOAD=""
 
 [ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η προσωρινή λήψη του agent binary."
@@ -287,16 +300,130 @@ HEADER_HEX="$(od -An -tx1 -N20 "$AGENT_TMP" | tr -d ' \n')"
 
 # Phase D security boundary: ποτέ chmod +x, ποτέ exec. Το binary υπάρχει μόνο για verification.
 rm -f "$AGENT_TMP" "$AGENT_HEADERS"
-EXPECTED_AGENT_SHA=""
 ACTUAL_AGENT_SHA=""
 
 [ ! -e "$AGENT_TMP" ] || fail "Το προσωρινό agent binary δεν διαγράφηκε."
 echo "ΕΠΙΤΥΧΙΑ: Agent binary ${ARCHITECTURE}, μέγεθος, SHA-256 και ELF architecture επαληθεύτηκαν."
 echo "Το binary διαγράφηκε αμέσως. Δεν έγινε chmod και δεν εκτελέστηκε."
 echo ""
-echo "ΣΗΜΑΝΤΙΚΟ: Η έκδοση ${VERSION} ΔΕΝ εκτελεί MeshCentral agent,"
+
+echo "5/6 Αίτημα one-time Phase E Activation Authorization Ticket..."
+ACTIVATION_REQUEST_PAYLOAD="$(jq -n \
+  --arg agent_ticket "$AGENT_TICKET" \
+  --arg client "home_assistant_os" \
+  --arg client_version "$VERSION" \
+  --arg architecture "$ARCHITECTURE" \
+  '{agent_ticket:$agent_ticket, client:$client, client_version:$client_version, architecture:$architecture}')"
+
+set +e
+ACTIVATION_REQUEST_HTTP="$(curl \
+  --silent \
+  --show-error \
+  --proto '=https' \
+  --tlsv1.2 \
+  --connect-timeout 10 \
+  --max-time 20 \
+  --output "$ACTIVATION_REQUEST_RESPONSE" \
+  --write-out '%{http_code}' \
+  --header 'Content-Type: application/json' \
+  --header "User-Agent: SmartProRemoteSupportSession/${VERSION}" \
+  --data "$ACTIVATION_REQUEST_PAYLOAD" \
+  "$ACTIVATION_REQUEST_ENDPOINT")"
+CURL_RC=$?
+set -e
+
+AGENT_TICKET=""
+ACTIVATION_REQUEST_PAYLOAD=""
+
+[ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η αίτηση Phase E authorization."
+jq empty "$ACTIVATION_REQUEST_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker επέστρεψε μη αναμενόμενη Phase E authorization απάντηση (HTTP ${ACTIVATION_REQUEST_HTTP})."
+
+if [ "$ACTIVATION_REQUEST_HTTP" != "200" ]; then
+  REASON="$(jq -r '.data.reason // .reason // "unknown"' "$ACTIVATION_REQUEST_RESPONSE")"
+  MESSAGE="$(jq -r '.message // "Η Phase E authorization δεν εγκρίθηκε."' "$ACTIVATION_REQUEST_RESPONSE")"
+  case "$REASON" in
+    not_armed) fail "Η συγκεκριμένη συνεδρία δεν έχει οπλιστεί από Admin για Phase E." ;;
+    agent_delivery_too_old) fail "Το verified agent delivery είναι πολύ παλιό για Phase E authorization." ;;
+    client_mismatch) fail "Το Phase E authorization δεν αντιστοιχεί σε αυτόν τον client." ;;
+    rate_limited) fail "Έγιναν πολλές Phase E authorization προσπάθειες. Δοκιμάστε ξανά αργότερα." ;;
+    *) fail "${MESSAGE} (HTTP ${ACTIVATION_REQUEST_HTTP})" ;;
+  esac
+fi
+
+ACTIVATION_AUTHORIZED="$(jq -r '.authorized // false' "$ACTIVATION_REQUEST_RESPONSE")"
+ACTIVATION_TICKET="$(jq -r '.ticket // empty' "$ACTIVATION_REQUEST_RESPONSE")"
+ACTIVATION_CONSUME_ENDPOINT="$(jq -r '.endpoint // empty' "$ACTIVATION_REQUEST_RESPONSE")"
+ACTIVATION_EXPIRES="$(jq -r '.expires_at // empty' "$ACTIVATION_REQUEST_RESPONSE")"
+ACTIVATION_ARCH="$(jq -r '.architecture // empty' "$ACTIVATION_REQUEST_RESPONSE")"
+ACTIVATION_SHA="$(jq -r '.sha256 // empty' "$ACTIVATION_REQUEST_RESPONSE")"
+ACTIVATION_BYTES="$(jq -r '.bytes // 0' "$ACTIVATION_REQUEST_RESPONSE")"
+
+[ "$ACTIVATION_AUTHORIZED" = "true" ] || fail "Ο Broker δεν εξέδωσε Phase E authorization ticket."
+[ -n "$ACTIVATION_TICKET" ] || fail "Λείπει το one-time Phase E activation ticket."
+[ "$ACTIVATION_ARCH" = "$ARCHITECTURE" ] || fail "Το Phase E ticket δεν αντιστοιχεί στην αρχιτεκτονική του host."
+[ "$ACTIVATION_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το Phase E ticket δεν είναι δεμένο με το verified agent SHA-256."
+[ "$ACTIVATION_BYTES" = "$EXPECTED_AGENT_BYTES" ] || fail "Το Phase E ticket δεν είναι δεμένο με το verified agent byte count."
+[ -n "$ACTIVATION_CONSUME_ENDPOINT" ] || fail "Λείπει το Phase E activation consume endpoint."
+case "$ACTIVATION_CONSUME_ENDPOINT" in
+  https://*) ;;
+  *) fail "Το Phase E consume endpoint δεν είναι HTTPS." ;;
+esac
+[ "$(url_origin "$ACTIVATION_CONSUME_ENDPOINT")" = "$BROKER_ORIGIN" ] || fail "Το Phase E consume endpoint δεν ανήκει στο ίδιο HTTPS origin με τον Broker."
+jq -e '.execution == false and .remote_access == false and .mode == "activation_authorization_phase_e"' "$ACTIVATION_REQUEST_RESPONSE" >/dev/null 2>&1 || fail "Η Phase E authorization απάντηση δεν είναι execution-locked."
+rm -f "$ACTIVATION_REQUEST_RESPONSE"
+
+echo "ΕΠΙΤΥΧΙΑ: Εκδόθηκε one-time Phase E authorization ticket μετά από Admin arming και verified Phase D delivery."
+[ -n "$ACTIVATION_EXPIRES" ] && echo "Λήξη activation ticket (UTC): ${ACTIVATION_EXPIRES}"
+echo ""
+
+echo "6/6 Κατανάλωση Phase E authorization ticket — χωρίς execution..."
+ACTIVATION_CONSUME_PAYLOAD="$(jq -n \
+  --arg ticket "$ACTIVATION_TICKET" \
+  --arg client "home_assistant_os" \
+  --arg client_version "$VERSION" \
+  --arg architecture "$ARCHITECTURE" \
+  '{ticket:$ticket, client:$client, client_version:$client_version, architecture:$architecture}')"
+
+set +e
+ACTIVATION_CONSUME_HTTP="$(curl \
+  --silent \
+  --show-error \
+  --proto '=https' \
+  --tlsv1.2 \
+  --connect-timeout 10 \
+  --max-time 20 \
+  --output "$ACTIVATION_CONSUME_RESPONSE" \
+  --write-out '%{http_code}' \
+  --header 'Content-Type: application/json' \
+  --header "User-Agent: SmartProRemoteSupportSession/${VERSION}" \
+  --data "$ACTIVATION_CONSUME_PAYLOAD" \
+  "$ACTIVATION_CONSUME_ENDPOINT")"
+CURL_RC=$?
+set -e
+
+ACTIVATION_TICKET=""
+ACTIVATION_CONSUME_PAYLOAD=""
+
+[ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η κατανάλωση του Phase E authorization ticket."
+jq empty "$ACTIVATION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker επέστρεψε μη αναμενόμενη Phase E consume απάντηση (HTTP ${ACTIVATION_CONSUME_HTTP})."
+[ "$ACTIVATION_CONSUME_HTTP" = "200" ] || fail "Το Phase E authorization ticket δεν καταναλώθηκε (HTTP ${ACTIVATION_CONSUME_HTTP})."
+
+jq -e '.authorized == true and .consumed == true and .execution == false and .remote_access == false and .mode == "activation_authorization_phase_e"' "$ACTIVATION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Η τελική Phase E απάντηση δεν είναι authorization-only."
+FINAL_ARCH="$(jq -r '.architecture // empty' "$ACTIVATION_CONSUME_RESPONSE")"
+FINAL_SHA="$(jq -r '.sha256 // empty' "$ACTIVATION_CONSUME_RESPONSE")"
+FINAL_BYTES="$(jq -r '.bytes // 0' "$ACTIVATION_CONSUME_RESPONSE")"
+[ "$FINAL_ARCH" = "$ARCHITECTURE" ] || fail "Η τελική Phase E αρχιτεκτονική δεν συμφωνεί."
+[ "$FINAL_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το τελικό Phase E SHA-256 δεν συμφωνεί."
+[ "$FINAL_BYTES" = "$EXPECTED_AGENT_BYTES" ] || fail "Το τελικό Phase E byte count δεν συμφωνεί."
+rm -f "$ACTIVATION_CONSUME_RESPONSE"
+
+EXPECTED_AGENT_SHA=""
+EXPECTED_AGENT_BYTES=""
+
+echo "ΕΠΙΤΥΧΙΑ: Η one-time Phase E authorization chain ολοκληρώθηκε."
+echo "ΣΗΜΑΝΤΙΚΟ: Η έκδοση ${VERSION} ΔΕΝ κάνει chmod και ΔΕΝ εκτελεί MeshCentral agent,"
 echo "δεν δημιουργεί tunnel / Router και δεν ενεργοποιεί remote access."
-echo "AGENT DELIVERED & VERIFIED — NOT EXECUTED"
-echo "SECURE AGENT DELIVERY PHASE D: ΟΛΟΚΛΗΡΩΘΗΚΕ"
+echo "ACTIVATION AUTHORIZED — NOT EXECUTED"
+echo "ACTIVATION AUTHORIZATION PHASE E: ΟΛΟΚΛΗΡΩΘΗΚΕ"
 echo "===================================================="
 exit 0
