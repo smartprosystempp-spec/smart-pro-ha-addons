@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — Secure Bootstrap Delivery Phase B
+- Απαιτεί Smart Pro Remote Session Broker 0.5.0+ με MeshCentral Vault `READY`.
+- Διατηρεί validation + one-time ticket flow.
+- Λαμβάνει μόνο το επαληθευμένο `.msh` μέσω του one-time ticket.
+- Ελέγχει encoding, μέγεθος, SHA-256 και βασικά `.msh` πεδία.
+- Δεν εμφανίζει `.msh`, MeshID, ServerID ή MeshServer values στο log.
+- Το `.msh` γράφεται μόνο προσωρινά στο `/tmp` με `umask 077` και διαγράφεται αμέσως.
+- Καμία λήψη/εκτέλεση agent, tunnel, Router ή remote access.
+- Παραμένει `boot: manual_only`, `startup: once`, `host_network:false`.
+
 ## 0.3.0 — Temporary Bootstrap Phase A
 - Διατηρεί το validation flow της 0.2.0.
 - Ζητά one-time bootstrap ticket από Broker 0.3.0.

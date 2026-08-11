@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Temporary Bootstrap Phase A μέσω Smart Pro Broker. Η 0.3.0 ελέγχει one-time bootstrap ticket χωρίς να ενεργοποιεί ακόμη πραγματικό remote access."
-version: "0.3.0"
+description: "Secure Bootstrap Delivery Phase B μέσω Smart Pro Broker. Η 0.4.0 λαμβάνει προσωρινά το επαληθευμένο .msh, το ελέγχει και το διαγράφει χωρίς να κατεβάζει ή να εκτελεί agent."
+version: "0.4.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

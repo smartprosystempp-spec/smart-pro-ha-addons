@@ -1,31 +1,32 @@
-# Οδηγίες — Προσωρινή Συνεδρία 0.3.0
+# Οδηγίες — Προσωρινή Συνεδρία 0.4.0
 
 ## Σκοπός αυτής της έκδοσης
-Η 0.3.0 ολοκληρώνει το **Temporary Bootstrap Phase A** χωρίς πραγματικό remote access. Ελέγχει ολόκληρη την ασφαλή αλυσίδα:
+Η 0.4.0 ολοκληρώνει το **Secure Bootstrap Delivery Phase B** χωρίς πραγματικό remote access:
 
-`session code → validation → one-time bootstrap ticket → consume → audit`
+`session code → validation → one-time ticket → server-side READY .msh → temporary delivery → fingerprint/field verification → secure deletion → audit`
 
 ## Διαμόρφωση
 Στην καρτέλα **Διαμόρφωση** παραμένουν δύο πεδία:
 
-- **Endpoint επικύρωσης**: προρυθμισμένο στο Smart Pro System.
-- **Προσωρινός κωδικός συνεδρίας**: ο κωδικός `SP-XXXX-XXXX` που δημιουργεί ο Admin από WordPress → Remote Sessions.
+- **Endpoint Smart Pro Broker**: προρυθμισμένο στο Smart Pro System.
+- **Προσωρινός κωδικός συνεδρίας**: ο κωδικός `SP-XXXX-XXXX` που δημιουργεί ο Admin.
 
-Το bootstrap ticket δεν συμπληρώνεται από τον χρήστη και δεν εμφανίζεται στο log. Εκδίδεται αυτόματα από τον Broker και καταναλώνεται αμέσως από την εφαρμογή.
+Το enrollment identifier παραμένει αποκλειστικά στον WordPress Broker. Δεν υπάρχει στο GitHub ή στη διαμόρφωση του Home Assistant.
 
-## Controlled QA 0.3.0
-1. Ενημερώστε πρώτα τον Smart Pro Remote Session Broker σε 0.3.0.
+## Controlled QA 0.4.0
+1. Ο Smart Pro Remote Session Broker πρέπει να είναι 0.5.0+ και το MeshCentral Vault να είναι `READY`.
 2. Δημιουργήστε νέο test session code.
 3. Βάλτε τον code στη Διαμόρφωση της εφαρμογής και αποθηκεύστε.
 4. Πατήστε **Έναρξη** μία φορά.
-5. Στο log πρέπει να εμφανιστούν διαδοχικά:
-   - επιτυχής validation,
-   - έκδοση one-time bootstrap ticket χωρίς εμφάνιση της τιμής,
-   - επιτυχής consume,
-   - `TEMPORARY BOOTSTRAP PHASE A: ΟΛΟΚΛΗΡΩΘΗΚΕ`.
-6. Στον Broker, μετά από refresh, πρέπει να αυξηθεί το `Validations` και το `Bootstrap A` να δείξει issued/consumed.
-7. Ανακαλέστε τον test session code.
-8. Καθαρίστε τον κωδικό από τη Διαμόρφωση της εφαρμογής.
+5. Στο log πρέπει να εμφανιστούν:
+   - validation,
+   - one-time ticket,
+   - ασφαλής προσωρινή λήψη `.msh`,
+   - SHA-256 / size / required-field verification,
+   - ασφαλής διαγραφή,
+   - `SECURE BOOTSTRAP DELIVERY PHASE B: ΟΛΟΚΛΗΡΩΘΗΚΕ`.
+6. Στον Broker πρέπει να καταγραφεί issued / consumed / delivered.
+7. Ανακαλέστε τον test session code και καθαρίστε τον code από τη Διαμόρφωση.
 
 ## Σημαντικό
-Η 0.3.0 **δεν** ενεργοποιεί MeshCentral agent, enrollment, tunnel, Router ή remote access. Το πραγματικό remote-access bootstrap παραμένει επόμενο, ξεχωριστό security checkpoint.
+Η 0.4.0 **δεν** κατεβάζει ή εκτελεί MeshCentral agent και δεν ενεργοποιεί tunnel, Router ή remote access.
