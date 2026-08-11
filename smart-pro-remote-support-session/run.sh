@@ -1,21 +1,37 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
-MSH_TMP="/tmp/smart-pro-temporary-bootstrap.msh"
-AGENT_TMP="/tmp/smart-pro-meshagent-delivery.bin"
-AGENT_HEADERS="/tmp/smart-pro-meshagent-delivery.headers"
+MSH_TMP="/tmp/smart-pro-meshagent.msh"
+AGENT_TMP="/tmp/smart-pro-meshagent"
+AGENT_HEADERS="/tmp/smart-pro-meshagent.headers"
+AGENT_LOG="/tmp/smart-pro-meshagent.runtime.log"
+AGENT_PID_FILE="/tmp/smart-pro-meshagent.pid"
 ACTIVATION_REQUEST_RESPONSE="/tmp/smart-pro-activation-request-response.json"
 ACTIVATION_CONSUME_RESPONSE="/tmp/smart-pro-activation-consume-response.json"
+EXECUTION_REQUEST_RESPONSE="/tmp/smart-pro-execution-request-response.json"
+EXECUTION_CONSUME_RESPONSE="/tmp/smart-pro-execution-consume-response.json"
+EXECUTION_WATCH_RESPONSE="/tmp/smart-pro-execution-watch-response.json"
+EXECUTION_REPORT_RESPONSE="/tmp/smart-pro-execution-report-response.json"
+AGENT_PID=""
 
 umask 077
 ulimit -c 0 2>/dev/null || true
 
 cleanup() {
-  rm -f "$VALIDATE_RESPONSE" "$CONSUME_RESPONSE" "$MSH_TMP" "$AGENT_TMP" "$AGENT_HEADERS" "$ACTIVATION_REQUEST_RESPONSE" "$ACTIVATION_CONSUME_RESPONSE"
+  if [ -n "${AGENT_PID:-}" ] && kill -0 "$AGENT_PID" 2>/dev/null; then
+    kill -TERM "$AGENT_PID" 2>/dev/null || true
+    sleep 1
+    kill -KILL "$AGENT_PID" 2>/dev/null || true
+    wait "$AGENT_PID" 2>/dev/null || true
+  fi
+  AGENT_PID=""
+  rm -f "$VALIDATE_RESPONSE" "$CONSUME_RESPONSE" "$ACTIVATION_REQUEST_RESPONSE" "$ACTIVATION_CONSUME_RESPONSE" \
+    "$EXECUTION_REQUEST_RESPONSE" "$EXECUTION_CONSUME_RESPONSE" "$EXECUTION_WATCH_RESPONSE" "$EXECUTION_REPORT_RESPONSE" \
+    "$MSH_TMP" "$AGENT_TMP" "$AGENT_HEADERS" "$AGENT_LOG" "$AGENT_PID_FILE" /tmp/smart-pro-meshagent.db*
 }
 trap cleanup EXIT
 trap 'exit 143' HUP TERM
@@ -23,7 +39,7 @@ trap 'exit 130' INT
 
 fail() {
   echo "ΣΦΑΛΜΑ: $1"
-  echo "Δεν ενεργοποιήθηκε καμία απομακρυσμένη πρόσβαση."
+  echo "Η ροή σταμάτησε fail-closed. Τυχόν Phase F process τερματίζεται από το cleanup trap και τα προσωρινά runtime files διαγράφονται."
   exit 1
 }
 
@@ -34,13 +50,13 @@ url_origin() {
 case "$(uname -m 2>/dev/null || true)" in
   aarch64|arm64) ARCHITECTURE="aarch64"; EXPECTED_MACHINE_HEX="b700" ;;
   x86_64|amd64) ARCHITECTURE="amd64"; EXPECTED_MACHINE_HEX="3e00" ;;
-  *) fail "Η αρχιτεκτονική αυτού του Home Assistant host δεν υποστηρίζεται για Phase E." ;;
+  *) fail "Η αρχιτεκτονική αυτού του Home Assistant host δεν υποστηρίζεται για Phase F." ;;
 esac
 
 echo "===================================================="
 echo "  Smart Pro Remote Support - Προσωρινή Συνεδρία"
 echo "===================================================="
-echo "Κατάσταση: ACTIVATION AUTHORIZATION READINESS / PHASE E ${VERSION}"
+echo "Κατάσταση: CONTROLLED MESHAGENT EXECUTION / PHASE F ${VERSION}"
 echo "Αρχιτεκτονική QA: ${ARCHITECTURE}"
 echo ""
 
@@ -68,7 +84,7 @@ VALIDATE_PAYLOAD="$(jq -n \
   '{code:$code, client:$client, client_version:$client_version, request_bootstrap_ticket:true}')"
 SESSION_CODE=""
 
-echo "1/6 Επικύρωση συνεδρίας και αίτημα one-time bootstrap ticket..."
+echo "1/8 Επικύρωση συνεδρίας και αίτημα one-time bootstrap ticket..."
 set +e
 VALIDATE_HTTP="$(curl \
   --silent \
@@ -125,7 +141,7 @@ echo "Εκδόθηκε βραχύβιο bootstrap ticket χωρίς να εμφ�
 [ -n "$BOOTSTRAP_EXPIRES" ] && echo "Λήξη bootstrap ticket (UTC): ${BOOTSTRAP_EXPIRES}"
 echo ""
 
-echo "2/6 Κατανάλωση bootstrap ticket και επαλήθευση READY .msh..."
+echo "2/8 Κατανάλωση bootstrap ticket και επαλήθευση READY .msh..."
 CONSUME_PAYLOAD="$(jq -n \
   --arg ticket "$BOOTSTRAP_TICKET" \
   --arg client "home_assistant_os" \
@@ -200,14 +216,13 @@ for KEY in MeshName MeshType MeshID ServerID MeshServer; do
   grep -q "^${KEY}=" "$MSH_TMP" || fail "Το προσωρινό .msh λείπει απαιτούμενο πεδίο (${KEY})."
 done
 grep -qi '^MeshServer=wss://' "$MSH_TMP" || fail "Το προσωρινό .msh δεν χρησιμοποιεί ασφαλές WSS MeshServer."
-rm -f "$MSH_TMP"
 EXPECTED_MSH_SHA=""
 ACTUAL_MSH_SHA=""
 
-echo "ΕΠΙΤΥΧΙΑ: Το READY .msh επαληθεύτηκε και διαγράφηκε."
+echo "ΕΠΙΤΥΧΙΑ: Το READY .msh επαληθεύτηκε και κρατήθηκε μόνο προσωρινά για Phase F."
 echo ""
 
-echo "3/6 Έλεγχος ξεχωριστού one-time Agent Delivery Ticket..."
+echo "3/8 Έλεγχος ξεχωριστού one-time Agent Delivery Ticket..."
 AGENT_AVAILABLE="$(jq -r '.agent_delivery.available // false' "$CONSUME_RESPONSE")"
 AGENT_TICKET="$(jq -r '.agent_delivery.ticket // empty' "$CONSUME_RESPONSE")"
 AGENT_ENDPOINT="$(jq -r '.agent_delivery.endpoint // empty' "$CONSUME_RESPONSE")"
@@ -247,7 +262,7 @@ echo "ΕΠΙΤΥΧΙΑ: Το Agent Delivery Ticket είναι one-time, δεμέ
 [ -n "$AGENT_EXPIRES" ] && echo "Λήξη agent ticket (UTC): ${AGENT_EXPIRES}"
 echo ""
 
-echo "4/6 Προσωρινή λήψη, ακεραιότητα ELF/SHA και άμεση διαγραφή agent..."
+echo "4/8 Προσωρινή λήψη και ακεραιότητα ELF/SHA πριν από οποιαδήποτε execution permission..."
 AGENT_PAYLOAD="$(jq -n \
   --arg ticket "$AGENT_TICKET" \
   --arg client "home_assistant_os" \
@@ -298,16 +313,16 @@ HEADER_HEX="$(od -An -tx1 -N20 "$AGENT_TMP" | tr -d ' \n')"
 [ "$(printf '%s' "$HEADER_HEX" | cut -c11-12)" = "01" ] || fail "Το agent binary δεν είναι little-endian ELF."
 [ "$(printf '%s' "$HEADER_HEX" | cut -c37-40)" = "$EXPECTED_MACHINE_HEX" ] || fail "Το ELF e_machine δεν αντιστοιχεί στην αρχιτεκτονική ${ARCHITECTURE}."
 
-# Phase D security boundary: ποτέ chmod +x, ποτέ exec. Το binary υπάρχει μόνο για verification.
-rm -f "$AGENT_TMP" "$AGENT_HEADERS"
+# Phase F: το verified binary παραμένει προσωρινά ΜΗ εκτελέσιμο μέχρι το ξεχωριστό Phase F ticket consume.
+rm -f "$AGENT_HEADERS"
 ACTUAL_AGENT_SHA=""
 
-[ ! -e "$AGENT_TMP" ] || fail "Το προσωρινό agent binary δεν διαγράφηκε."
+[ -f "$AGENT_TMP" ] || fail "Το verified agent binary δεν είναι διαθέσιμο για το επόμενο Phase F authorization checkpoint."
 echo "ΕΠΙΤΥΧΙΑ: Agent binary ${ARCHITECTURE}, μέγεθος, SHA-256 και ELF architecture επαληθεύτηκαν."
-echo "Το binary διαγράφηκε αμέσως. Δεν έγινε chmod και δεν εκτελέστηκε."
+echo "Το binary παραμένει προσωρινά χωρίς executable permission μέχρι την τελική Phase F authorization."
 echo ""
 
-echo "5/6 Αίτημα one-time Phase E Activation Authorization Ticket..."
+echo "5/8 Αίτημα one-time Phase E Activation Authorization Ticket..."
 ACTIVATION_REQUEST_PAYLOAD="$(jq -n \
   --arg agent_ticket "$AGENT_TICKET" \
   --arg client "home_assistant_os" \
@@ -376,7 +391,7 @@ echo "ΕΠΙΤΥΧΙΑ: Εκδόθηκε one-time Phase E authorization ticket �
 [ -n "$ACTIVATION_EXPIRES" ] && echo "Λήξη activation ticket (UTC): ${ACTIVATION_EXPIRES}"
 echo ""
 
-echo "6/6 Κατανάλωση Phase E authorization ticket — χωρίς execution..."
+echo "6/8 Κατανάλωση Phase E authorization ticket — χωρίς execution..."
 ACTIVATION_CONSUME_PAYLOAD="$(jq -n \
   --arg ticket "$ACTIVATION_TICKET" \
   --arg client "home_assistant_os" \
@@ -401,7 +416,6 @@ ACTIVATION_CONSUME_HTTP="$(curl \
 CURL_RC=$?
 set -e
 
-ACTIVATION_TICKET=""
 ACTIVATION_CONSUME_PAYLOAD=""
 
 [ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η κατανάλωση του Phase E authorization ticket."
@@ -415,15 +429,185 @@ FINAL_BYTES="$(jq -r '.bytes // 0' "$ACTIVATION_CONSUME_RESPONSE")"
 [ "$FINAL_ARCH" = "$ARCHITECTURE" ] || fail "Η τελική Phase E αρχιτεκτονική δεν συμφωνεί."
 [ "$FINAL_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το τελικό Phase E SHA-256 δεν συμφωνεί."
 [ "$FINAL_BYTES" = "$EXPECTED_AGENT_BYTES" ] || fail "Το τελικό Phase E byte count δεν συμφωνεί."
+EXECUTION_AVAILABLE="$(jq -r '.execution_authorization.available // false' "$ACTIVATION_CONSUME_RESPONSE")"
+EXECUTION_REQUEST_ENDPOINT="$(jq -r '.execution_authorization.request_endpoint // empty' "$ACTIVATION_CONSUME_RESPONSE")"
+EXECUTION_REQUIRES_ARM="$(jq -r '.execution_authorization.requires_admin_arm // false' "$ACTIVATION_CONSUME_RESPONSE")"
+EXECUTION_MAX_RUNTIME_HINT="$(jq -r '.execution_authorization.max_runtime_seconds // 0' "$ACTIVATION_CONSUME_RESPONSE")"
+[ "$EXECUTION_AVAILABLE" = "true" ] || fail "Ο Broker δεν επέστρεψε Phase F execution authorization metadata."
+[ "$EXECUTION_REQUIRES_ARM" = "true" ] || fail "Ο Broker δεν απαιτεί ξεχωριστή Admin όπλιση για Phase F."
+[ -n "$EXECUTION_REQUEST_ENDPOINT" ] || fail "Λείπει το Phase F execution request endpoint."
+case "$EXECUTION_REQUEST_ENDPOINT" in https://*) ;; *) fail "Το Phase F execution request endpoint δεν είναι HTTPS." ;; esac
+[ "$(url_origin "$EXECUTION_REQUEST_ENDPOINT")" = "$BROKER_ORIGIN" ] || fail "Το Phase F execution endpoint δεν ανήκει στο ίδιο HTTPS origin με τον Broker."
+[ "$EXECUTION_MAX_RUNTIME_HINT" -ge 15 ] && [ "$EXECUTION_MAX_RUNTIME_HINT" -le 120 ] || fail "Το Phase F runtime policy είναι εκτός ασφαλών ορίων."
 rm -f "$ACTIVATION_CONSUME_RESPONSE"
+
+echo "ΕΠΙΤΥΧΙΑ: Η one-time Phase E authorization chain ολοκληρώθηκε."
+echo ""
+
+echo "7/8 Αίτημα και κατανάλωση one-time Phase F execution ticket..."
+EXECUTION_REQUEST_PAYLOAD="$(jq -n \
+  --arg activation_ticket "$ACTIVATION_TICKET" \
+  --arg client "home_assistant_os" \
+  --arg client_version "$VERSION" \
+  --arg architecture "$ARCHITECTURE" \
+  '{activation_ticket:$activation_ticket, client:$client, client_version:$client_version, architecture:$architecture}')"
+set +e
+EXECUTION_REQUEST_HTTP="$(curl --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 20 \
+  --output "$EXECUTION_REQUEST_RESPONSE" --write-out '%{http_code}' --header 'Content-Type: application/json' \
+  --header "User-Agent: SmartProRemoteSupportSession/${VERSION}" --data "$EXECUTION_REQUEST_PAYLOAD" "$EXECUTION_REQUEST_ENDPOINT")"
+CURL_RC=$?
+set -e
+ACTIVATION_TICKET=""
+EXECUTION_REQUEST_PAYLOAD=""
+[ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η αίτηση Phase F execution authorization."
+jq empty "$EXECUTION_REQUEST_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker επέστρεψε μη αναμενόμενη Phase F request απάντηση (HTTP ${EXECUTION_REQUEST_HTTP})."
+if [ "$EXECUTION_REQUEST_HTTP" != "200" ]; then
+  REASON="$(jq -r '.data.reason // .reason // "unknown"' "$EXECUTION_REQUEST_RESPONSE")"
+  case "$REASON" in
+    not_armed) fail "Η συγκεκριμένη συνεδρία δεν έχει οπλιστεί από Admin για Phase F." ;;
+    activation_too_old) fail "Η Phase E authorization είναι πολύ παλιά για Phase F." ;;
+    *) fail "Η Phase F execution authorization δεν εγκρίθηκε (HTTP ${EXECUTION_REQUEST_HTTP})." ;;
+  esac
+fi
+EXECUTION_TICKET="$(jq -r '.ticket // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_REPORT_TOKEN="$(jq -r '.report_token // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_CONSUME_ENDPOINT="$(jq -r '.endpoint // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_WATCH_ENDPOINT="$(jq -r '.watch_endpoint // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_REPORT_ENDPOINT="$(jq -r '.report_endpoint // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_ARCH="$(jq -r '.architecture // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_SHA="$(jq -r '.sha256 // empty' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_BYTES="$(jq -r '.bytes // 0' "$EXECUTION_REQUEST_RESPONSE")"
+EXECUTION_MAX_RUNTIME="$(jq -r '.max_runtime_seconds // 0' "$EXECUTION_REQUEST_RESPONSE")"
+[ -n "$EXECUTION_TICKET" ] && [ -n "$EXECUTION_REPORT_TOKEN" ] || fail "Λείπει Phase F execution/report token."
+[ "$EXECUTION_ARCH" = "$ARCHITECTURE" ] || fail "Το Phase F ticket δεν αντιστοιχεί στην αρχιτεκτονική του host."
+[ "$EXECUTION_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το Phase F ticket δεν είναι δεμένο με το verified agent SHA-256."
+[ "$EXECUTION_BYTES" = "$EXPECTED_AGENT_BYTES" ] || fail "Το Phase F ticket δεν είναι δεμένο με το verified byte count."
+[ "$EXECUTION_MAX_RUNTIME" -ge 15 ] && [ "$EXECUTION_MAX_RUNTIME" -le 120 ] || fail "Το Phase F max runtime είναι εκτός ασφαλών ορίων."
+for EP in "$EXECUTION_CONSUME_ENDPOINT" "$EXECUTION_WATCH_ENDPOINT" "$EXECUTION_REPORT_ENDPOINT"; do
+  case "$EP" in https://*) ;; *) fail "Phase F endpoint δεν είναι HTTPS." ;; esac
+  [ "$(url_origin "$EP")" = "$BROKER_ORIGIN" ] || fail "Phase F endpoint δεν ανήκει στο Broker origin."
+done
+jq -e '.execution == false and .temporary_connect == true and .persistence == false and .sandboxed_addon == true and .mode == "controlled_execution_phase_f"' "$EXECUTION_REQUEST_RESPONSE" >/dev/null 2>&1 || fail "Η Phase F request απάντηση δεν είναι pre-execution locked."
+rm -f "$EXECUTION_REQUEST_RESPONSE"
+
+EXECUTION_CONSUME_PAYLOAD="$(jq -n --arg ticket "$EXECUTION_TICKET" --arg client "home_assistant_os" --arg client_version "$VERSION" --arg architecture "$ARCHITECTURE" '{ticket:$ticket, client:$client, client_version:$client_version, architecture:$architecture}')"
+set +e
+EXECUTION_CONSUME_HTTP="$(curl --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 20 \
+  --output "$EXECUTION_CONSUME_RESPONSE" --write-out '%{http_code}' --header 'Content-Type: application/json' \
+  --header "User-Agent: SmartProRemoteSupportSession/${VERSION}" --data "$EXECUTION_CONSUME_PAYLOAD" "$EXECUTION_CONSUME_ENDPOINT")"
+CURL_RC=$?
+set -e
+EXECUTION_TICKET=""
+EXECUTION_CONSUME_PAYLOAD=""
+[ "$CURL_RC" -eq 0 ] || fail "Δεν ήταν δυνατή η κατανάλωση του Phase F execution ticket."
+jq empty "$EXECUTION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Ο Broker επέστρεψε μη αναμενόμενη Phase F consume απάντηση (HTTP ${EXECUTION_CONSUME_HTTP})."
+[ "$EXECUTION_CONSUME_HTTP" = "200" ] || fail "Το Phase F execution ticket δεν καταναλώθηκε (HTTP ${EXECUTION_CONSUME_HTTP})."
+jq -e '.authorized == true and .consumed == true and .execution == true and .temporary_connect == true and .persistence == false and .sandboxed_addon == true and .mode == "controlled_execution_phase_f"' "$EXECUTION_CONSUME_RESPONSE" >/dev/null 2>&1 || fail "Η τελική Phase F απάντηση δεν επιτρέπει μόνο controlled temporary execution."
+FINAL_EXEC_ARCH="$(jq -r '.architecture // empty' "$EXECUTION_CONSUME_RESPONSE")"
+FINAL_EXEC_SHA="$(jq -r '.sha256 // empty' "$EXECUTION_CONSUME_RESPONSE")"
+FINAL_EXEC_BYTES="$(jq -r '.bytes // 0' "$EXECUTION_CONSUME_RESPONSE")"
+FINAL_MAX_RUNTIME="$(jq -r '.max_runtime_seconds // 0' "$EXECUTION_CONSUME_RESPONSE")"
+[ "$FINAL_EXEC_ARCH" = "$ARCHITECTURE" ] && [ "$FINAL_EXEC_SHA" = "$EXPECTED_AGENT_SHA" ] && [ "$FINAL_EXEC_BYTES" = "$EXPECTED_AGENT_BYTES" ] || fail "Η τελική Phase F binding δεν συμφωνεί με το verified binary."
+[ "$FINAL_MAX_RUNTIME" = "$EXECUTION_MAX_RUNTIME" ] || fail "Το Phase F runtime policy άλλαξε μεταξύ request και consume."
+rm -f "$EXECUTION_CONSUME_RESPONSE"
+echo "ΕΠΙΤΥΧΙΑ: Phase F execution authorization καταναλώθηκε one-time. Επιτρέπεται μόνο προσωρινό -connect για ${EXECUTION_MAX_RUNTIME}s."
+echo ""
+
+echo "8/8 Ελεγχόμενη προσωρινή εκτέλεση MeshAgent -connect και υποχρεωτικός τερματισμός..."
+# Last-second integrity check immediately before changing executable permission.
+PREEXEC_SHA="$(sha256sum "$AGENT_TMP" | awk '{print $1}')"
+[ "$PREEXEC_SHA" = "$EXPECTED_AGENT_SHA" ] || fail "Το verified MeshAgent άλλαξε πριν την εκτέλεση."
+chmod 700 "$AGENT_TMP" || fail "Δεν ήταν δυνατή η προσωρινή executable permission στο verified binary."
+
+START_TS="$(date +%s)"
+( cd /tmp && exec "$AGENT_TMP" -connect >"$AGENT_LOG" 2>&1 ) &
+AGENT_PID=$!
+printf '%s\n' "$AGENT_PID" > "$AGENT_PID_FILE"
+sleep 3
+if ! kill -0 "$AGENT_PID" 2>/dev/null; then
+  set +e; wait "$AGENT_PID"; AGENT_RC=$?; set -e
+  AGENT_PID=""
+  RESULT_CODE="startup_failed"
+else
+  RESULT_CODE="completed"
+  echo "ΕΠΙΤΥΧΙΑ: Το MeshAgent -connect ξεκίνησε μέσα στο απομονωμένο add-on runtime."
+  echo "Θα τερματιστεί υποχρεωτικά έως ${EXECUTION_MAX_RUNTIME}s ή νωρίτερα σε revoke/expiry/watch failure."
+  while kill -0 "$AGENT_PID" 2>/dev/null; do
+    NOW_TS="$(date +%s)"
+    ELAPSED=$((NOW_TS - START_TS))
+    if [ "$ELAPSED" -ge "$EXECUTION_MAX_RUNTIME" ]; then
+      RESULT_CODE="completed"
+      break
+    fi
+    WATCH_PAYLOAD="$(jq -n --arg report_token "$EXECUTION_REPORT_TOKEN" --arg client "home_assistant_os" --arg client_version "$VERSION" --arg architecture "$ARCHITECTURE" '{report_token:$report_token, client:$client, client_version:$client_version, architecture:$architecture}')"
+    set +e
+    WATCH_HTTP="$(curl --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 10 --output "$EXECUTION_WATCH_RESPONSE" --write-out '%{http_code}' --header 'Content-Type: application/json' --header "User-Agent: SmartProRemoteSupportSession/${VERSION}" --data "$WATCH_PAYLOAD" "$EXECUTION_WATCH_ENDPOINT")"
+    WATCH_RC=$?
+    set -e
+    WATCH_PAYLOAD=""
+    if [ "$WATCH_RC" -ne 0 ] || [ "$WATCH_HTTP" != "200" ] || ! jq empty "$EXECUTION_WATCH_RESPONSE" >/dev/null 2>&1; then
+      RESULT_CODE="watch_failed"
+      rm -f "$EXECUTION_WATCH_RESPONSE"
+      break
+    fi
+    CONTINUE_RUN="$(jq -r '.continue // false' "$EXECUTION_WATCH_RESPONSE")"
+    rm -f "$EXECUTION_WATCH_RESPONSE"
+    if [ "$CONTINUE_RUN" != "true" ]; then
+      RESULT_CODE="revoked"
+      break
+    fi
+    REMAINING=$((EXECUTION_MAX_RUNTIME - ELAPSED))
+    if [ "$REMAINING" -gt 5 ]; then
+      sleep 5
+    elif [ "$REMAINING" -gt 0 ]; then
+      sleep "$REMAINING"
+    fi
+  done
+  if ! kill -0 "$AGENT_PID" 2>/dev/null && [ "$RESULT_CODE" = "completed" ]; then
+    RESULT_CODE="agent_exited"
+  fi
+fi
+
+if [ -n "${AGENT_PID:-}" ] && kill -0 "$AGENT_PID" 2>/dev/null; then
+  kill -TERM "$AGENT_PID" 2>/dev/null || true
+  for _i in 1 2 3; do
+    kill -0 "$AGENT_PID" 2>/dev/null || break
+    sleep 1
+  done
+  kill -KILL "$AGENT_PID" 2>/dev/null || true
+fi
+if [ -n "${AGENT_PID:-}" ]; then
+  set +e; wait "$AGENT_PID"; AGENT_RC=$?; set -e
+fi
+AGENT_PID=""
+END_TS="$(date +%s)"
+RUNTIME_SECONDS=$((END_TS - START_TS))
+rm -f "$AGENT_PID_FILE" "$AGENT_LOG" "$AGENT_TMP" "$MSH_TMP" /tmp/smart-pro-meshagent.db*
+[ ! -e "$AGENT_TMP" ] && [ ! -e "$MSH_TMP" ] || fail "Δεν ολοκληρώθηκε το Phase F runtime cleanup."
+
+REPORT_PAYLOAD="$(jq -n --arg report_token "$EXECUTION_REPORT_TOKEN" --arg client "home_assistant_os" --arg client_version "$VERSION" --arg architecture "$ARCHITECTURE" --arg result_code "$RESULT_CODE" --argjson runtime_seconds "$RUNTIME_SECONDS" '{report_token:$report_token, client:$client, client_version:$client_version, architecture:$architecture, result_code:$result_code, runtime_seconds:$runtime_seconds}')"
+set +e
+REPORT_HTTP="$(curl --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 10 --output "$EXECUTION_REPORT_RESPONSE" --write-out '%{http_code}' --header 'Content-Type: application/json' --header "User-Agent: SmartProRemoteSupportSession/${VERSION}" --data "$REPORT_PAYLOAD" "$EXECUTION_REPORT_ENDPOINT")"
+REPORT_RC=$?
+set -e
+EXECUTION_REPORT_TOKEN=""
+REPORT_PAYLOAD=""
+REPORT_OK=false
+if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_HTTP" = "200" ] && jq -e '.reported == true' "$EXECUTION_REPORT_RESPONSE" >/dev/null 2>&1; then
+  REPORT_OK=true
+fi
+rm -f "$EXECUTION_REPORT_RESPONSE"
 
 EXPECTED_AGENT_SHA=""
 EXPECTED_AGENT_BYTES=""
+if [ "$RESULT_CODE" != "completed" ]; then
+  fail "Η controlled Phase F execution τερματίστηκε fail-closed (${RESULT_CODE})."
+fi
+[ "$REPORT_OK" = "true" ] || fail "Το MeshAgent τερματίστηκε και καθαρίστηκε, αλλά απέτυχε το Phase F completion audit report."
 
-echo "ΕΠΙΤΥΧΙΑ: Η one-time Phase E authorization chain ολοκληρώθηκε."
-echo "ΣΗΜΑΝΤΙΚΟ: Η έκδοση ${VERSION} ΔΕΝ κάνει chmod και ΔΕΝ εκτελεί MeshCentral agent,"
-echo "δεν δημιουργεί tunnel / Router και δεν ενεργοποιεί remote access."
-echo "ACTIVATION AUTHORIZED — NOT EXECUTED"
-echo "ACTIVATION AUTHORIZATION PHASE E: ΟΛΟΚΛΗΡΩΘΗΚΕ"
+echo "ΕΠΙΤΥΧΙΑ: Το MeshAgent -connect τερματίστηκε υποχρεωτικά μετά από ${RUNTIME_SECONDS}s και όλα τα runtime files διαγράφηκαν."
+echo "Δεν έγινε install/service persistence. Δεν έγινε δεύτερη εκτέλεση."
+echo "MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE"
+echo "CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ"
 echo "===================================================="
 exit 0

@@ -1,28 +1,11 @@
-# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.6.0
+# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.0
 
-Η 0.6.0 είναι το **Activation Authorization Readiness Phase E** ανάμεσα στο Home Assistant OS και τον Smart Pro Remote Session Broker 0.8.0+.
+## Phase F — Controlled MeshAgent Execution
 
-> **Δεν είναι ακόμη λειτουργική έκδοση remote access. Το MeshAgent δεν εκτελείται.**
+Η 0.7.0 είναι το πρώτο build που επιτρέπεται να εκτελέσει MeshAgent, αλλά μόνο μετά από ολόκληρη την επαληθευμένη Phase D/E αλυσίδα και ξεχωριστή one-time Phase F Admin όπλιση.
 
-## Τι κάνει
-- Επικυρώνει προσωρινό session code `SP-XXXX-XXXX` μέσω HTTPS.
-- Διατηρεί την ασφαλή one-time bootstrap / READY `.msh` αλυσίδα.
-- Δηλώνει πραγματική host αρχιτεκτονική `aarch64` ή `amd64`.
-- Λαμβάνει readiness-pinned Agent Delivery Ticket και επαληθεύει ακριβές μέγεθος, SHA-256 και ELF architecture.
-- Διαγράφει αμέσως το agent binary.
-- Μόνο μετά τη διαγραφή ζητά ξεχωριστό **Phase E Activation Authorization Ticket**.
-- Το Phase E ticket εκδίδεται μόνο όταν ο Admin έχει οπλίσει ρητά τη συγκεκριμένη συνεδρία.
-- Επιβεβαιώνει one-time consume και απαιτεί `execution=false` / `remote_access=false`.
-- Τερματίζεται μετά τον έλεγχο (`startup: once`) και δεν ξεκινά στο boot (`boot: manual_only`).
+Το MeshAgent εκτελείται μόνο με `-connect`, μέσα στο απομονωμένο Home Assistant add-on runtime, με `host_network: false`, χωρίς πρόσθετα host mounts/privileges και χωρίς install/service persistence. Το binary και το `.msh` υπάρχουν μόνο προσωρινά στο `/tmp`, το binary ξαναελέγχεται με SHA-256 αμέσως πριν το `chmod 700`, και υπάρχει hard runtime 60 δευτερολέπτων.
 
-## Security boundary
-- Δεν γίνεται `chmod +x`.
-- Δεν εκτελείται MeshAgent.
-- Δεν γίνεται install/service persistence.
-- Δεν δημιουργείται tunnel / Router connection.
-- Δεν δίνεται remote desktop ή άλλη απομακρυσμένη πρόσβαση.
-- Δεν εμφανίζονται enrollment identifier, `.msh` body, Agent Delivery Ticket ή Activation Ticket στα logs.
+Κατά την εκτέλεση ο client κάνει watchdog polling στον Broker. Revoke, expiry, αλλαγή state ή watch failure οδηγεί σε fail-closed τερματισμό. Στο τέλος διαγράφονται binary, `.msh`, pid/log/db sidecars και αποστέλλεται τελικό audit report χωρίς secrets.
 
-Success checkpoint:
-
-`ACTIVATION AUTHORIZED — NOT EXECUTED`
+**Η Phase F δεν είναι ακόμη operator remote-support QA.** Το πρώτο live test ελέγχει μόνο lifecycle: start → temporary MeshCentral connect → watchdog → mandatory termination → cleanup.

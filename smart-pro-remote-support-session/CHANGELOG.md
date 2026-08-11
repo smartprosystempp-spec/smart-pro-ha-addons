@@ -1,3 +1,15 @@
+# 0.7.0 — Controlled MeshAgent Execution Phase F
+
+- First controlled MeshAgent execution build.
+- Requires Broker 0.9.0+, consumed Phase E authorization and separate one-time Phase F Admin arming.
+- Retains verified READY `.msh` and exact verified binary only in `/tmp` until execution authorization is consumed.
+- Rechecks SHA-256 immediately before `chmod 700`.
+- Executes only `MeshAgent -connect`; no `-install`, service or persistence.
+- Hard max runtime 60 seconds.
+- Watchdog polls Broker; revoke/expiry/watch failure terminates fail-closed.
+- Mandatory PID/process cleanup and deletion of binary, `.msh`, log and db sidecars.
+- Final execution report is sent to Broker without tickets/secrets in logs.
+
 # Changelog
 
 ## 0.6.0 — Activation Authorization Readiness Phase E
