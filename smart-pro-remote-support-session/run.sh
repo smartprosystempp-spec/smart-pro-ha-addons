@@ -1,15 +1,16 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.3"
+VERSION="0.7.4"
 CONFIG_PATH="/data/options.json"
 VALIDATE_RESPONSE="/tmp/smart-pro-validation-response.json"
 CONSUME_RESPONSE="/tmp/smart-pro-bootstrap-consume-response.json"
-MSH_TMP="/tmp/smart-pro-meshagent.msh"
-AGENT_TMP="/tmp/smart-pro-meshagent"
-AGENT_HEADERS="/tmp/smart-pro-meshagent.headers"
-AGENT_LOG="/tmp/smart-pro-meshagent.runtime.log"
-AGENT_PID_FILE="/tmp/smart-pro-meshagent.pid"
+RUNTIME_DIR="/tmp/smart-pro-phase-f-runtime"
+MSH_TMP="$RUNTIME_DIR/meshagent.msh"
+AGENT_TMP="$RUNTIME_DIR/meshagent"
+AGENT_HEADERS="$RUNTIME_DIR/meshagent.headers"
+AGENT_LOG="$RUNTIME_DIR/meshagent.runtime.log"
+AGENT_PID_FILE="$RUNTIME_DIR/meshagent.pid"
 ACTIVATION_REQUEST_RESPONSE="/tmp/smart-pro-activation-request-response.json"
 ACTIVATION_CONSUME_RESPONSE="/tmp/smart-pro-activation-consume-response.json"
 EXECUTION_REQUEST_RESPONSE="/tmp/smart-pro-execution-request-response.json"
@@ -20,6 +21,7 @@ AGENT_PID=""
 RUN_GUARD_KEY_FILE="/data/.smart-pro-phase-f-one-shot.key"
 RUN_GUARD_STATE_FILE="/data/.smart-pro-phase-f-last-attempt"
 RUN_GUARD_FINGERPRINT=""
+LAUNCH_COUNT_FILE="/data/.smart-pro-phase-f-launch-count-v074"
 
 umask 077
 ulimit -c 0 2>/dev/null || true
@@ -34,7 +36,10 @@ cleanup() {
   AGENT_PID=""
   rm -f "$VALIDATE_RESPONSE" "$CONSUME_RESPONSE" "$ACTIVATION_REQUEST_RESPONSE" "$ACTIVATION_CONSUME_RESPONSE" \
     "$EXECUTION_REQUEST_RESPONSE" "$EXECUTION_CONSUME_RESPONSE" "$EXECUTION_WATCH_RESPONSE" "$EXECUTION_REPORT_RESPONSE" \
-    "$MSH_TMP" "$AGENT_TMP" "$AGENT_HEADERS" "$AGENT_LOG" "$AGENT_PID_FILE" /tmp/smart-pro-meshagent.db*
+    "$AGENT_HEADERS"
+  if [ -n "${RUNTIME_DIR:-}" ] && [ "$RUNTIME_DIR" = "/tmp/smart-pro-phase-f-runtime" ]; then
+    rm -rf "$RUNTIME_DIR"
+  fi
 }
 trap cleanup EXIT
 trap 'exit 143' HUP TERM
@@ -71,6 +76,30 @@ activate_one_shot_guard() {
   mv -f "$GUARD_STATE_TMP" "$RUN_GUARD_STATE_FILE" || fail "Δεν ήταν δυνατή η ενεργοποίηση του one-shot guard."
 }
 
+record_launch_instance() {
+  [ -d /data ] || return 0
+  CURRENT_COUNT=0
+  if [ -s "$LAUNCH_COUNT_FILE" ]; then
+    CURRENT_COUNT="$(cat "$LAUNCH_COUNT_FILE" 2>/dev/null || printf '0')"
+  fi
+  case "$CURRENT_COUNT" in
+    ''|*[!0-9]*) CURRENT_COUNT=0 ;;
+  esac
+  CURRENT_COUNT=$((CURRENT_COUNT + 1))
+  COUNT_TMP="${LAUNCH_COUNT_FILE}.tmp.$$"
+  printf '%s\n' "$CURRENT_COUNT" > "$COUNT_TMP" 2>/dev/null || return 0
+  chmod 600 "$COUNT_TMP" 2>/dev/null || true
+  mv -f "$COUNT_TMP" "$LAUNCH_COUNT_FILE" 2>/dev/null || return 0
+  echo "LAUNCH SAFETY: add-on process instance ${CURRENT_COUNT} για έκδοση ${VERSION}."
+}
+
+prepare_runtime_dir() {
+  [ "$RUNTIME_DIR" = "/tmp/smart-pro-phase-f-runtime" ] || fail "Μη αναμενόμενο Phase F runtime path."
+  rm -rf "$RUNTIME_DIR"
+  mkdir -p "$RUNTIME_DIR" || fail "Δεν ήταν δυνατή η δημιουργία του ιδιωτικού Phase F runtime directory."
+  chmod 700 "$RUNTIME_DIR" || fail "Δεν ήταν δυνατή η προστασία του Phase F runtime directory."
+}
+
 classify_startup_failure() {
   STARTUP_CATEGORY="unknown_startup_exit"
   [ -f "$AGENT_LOG" ] || return 0
@@ -84,6 +113,8 @@ classify_startup_failure() {
     STARTUP_CATEGORY="meshcentral_tls_or_certificate_rejected"
   elif grep -Eqi 'server url:|device group:|press ctrl-c to exit' "$AGENT_LOG"; then
     STARTUP_CATEGORY="connect_mode_started_then_exited"
+  elif grep -Eqi 'you can run the text version|usage:| -install| -uninstall| -update' "$AGENT_LOG"; then
+    STARTUP_CATEGORY="meshagent_help_or_config_not_loaded"
   elif grep -Eqi 'unable to connect|connection refused|network is unreachable|name or service not known|temporary failure in name resolution|connect.*(fail|error)' "$AGENT_LOG"; then
     STARTUP_CATEGORY="meshcentral_connection_failed"
   fi
@@ -104,6 +135,7 @@ echo "  Smart Pro Remote Support - Προσωρινή Συνεδρία"
 echo "===================================================="
 echo "Κατάσταση: CONTROLLED MESHAGENT EXECUTION / PHASE F ${VERSION}"
 echo "Αρχιτεκτονική QA: ${ARCHITECTURE}"
+record_launch_instance
 echo ""
 
 [ -f "$CONFIG_PATH" ] || fail "Δεν βρέθηκε η διαμόρφωση της εφαρμογής."
@@ -124,6 +156,7 @@ SESSION_CODE="$(printf '%s' "$SESSION_CODE" | tr '[:lower:]' '[:upper:]' | tr -c
 printf '%s' "$SESSION_CODE" | grep -Eq '^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$' || fail "Ο κωδικός δεν έχει την αναμενόμενη μορφή SP-XXXX-XXXX."
 
 activate_one_shot_guard
+prepare_runtime_dir
 
 VALIDATE_PAYLOAD="$(jq -n \
   --arg code "$SESSION_CODE" \
@@ -581,6 +614,8 @@ echo "ΕΠΙΤΥΧΙΑ: Phase F execution authorization καταναλώθηκε
 echo ""
 
 echo "8/8 Ελεγχόμενη προσωρινή εκτέλεση MeshAgent -connect και υποχρεωτικός τερματισμός..."
+[ -f "$RUNTIME_DIR/meshagent" ] && [ -f "$RUNTIME_DIR/meshagent.msh" ] || fail "Το canonical MeshAgent runtime layout δεν είναι πλήρες."
+echo "ΕΠΙΤΥΧΙΑ: Canonical runtime layout έτοιμο: meshagent + meshagent.msh στον ίδιο ιδιωτικό προσωρινό φάκελο."
 # Static ELF runtime-loader compatibility check before any executable permission.
 ELF_INTERP="$(readelf -l "$AGENT_TMP" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \([^]]*\)\].*/\1/p' | head -n 1)"
 if [ -n "$ELF_INTERP" ]; then
@@ -593,7 +628,7 @@ PREEXEC_SHA="$(sha256sum "$AGENT_TMP" | awk '{print $1}')"
 chmod 700 "$AGENT_TMP" || fail "Δεν ήταν δυνατή η προσωρινή executable permission στο verified binary."
 
 START_TS="$(date +%s)"
-( cd /tmp && exec "$AGENT_TMP" -connect >"$AGENT_LOG" 2>&1 ) &
+( cd "$RUNTIME_DIR" && exec ./meshagent -connect >"$AGENT_LOG" 2>&1 ) &
 AGENT_PID=$!
 printf '%s\n' "$AGENT_PID" > "$AGENT_PID_FILE"
 sleep 3
@@ -659,8 +694,8 @@ fi
 AGENT_PID=""
 END_TS="$(date +%s)"
 RUNTIME_SECONDS=$((END_TS - START_TS))
-rm -f "$AGENT_PID_FILE" "$AGENT_LOG" "$AGENT_TMP" "$MSH_TMP" /tmp/smart-pro-meshagent.db*
-[ ! -e "$AGENT_TMP" ] && [ ! -e "$MSH_TMP" ] || fail "Δεν ολοκληρώθηκε το Phase F runtime cleanup."
+rm -rf "$RUNTIME_DIR"
+[ ! -e "$RUNTIME_DIR" ] || fail "Δεν ολοκληρώθηκε το Phase F runtime cleanup."
 
 REPORT_PAYLOAD="$(jq -n --arg report_token "$EXECUTION_REPORT_TOKEN" --arg client "home_assistant_os" --arg client_version "$VERSION" --arg architecture "$ARCHITECTURE" --arg result_code "$RESULT_CODE" --argjson runtime_seconds "$RUNTIME_SECONDS" '{report_token:$report_token, client:$client, client_version:$client_version, architecture:$architecture, result_code:$result_code, runtime_seconds:$runtime_seconds}')"
 set +e

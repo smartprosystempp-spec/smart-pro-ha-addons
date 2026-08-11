@@ -1,17 +1,17 @@
-# Controlled live QA — Phase F 0.7.3
+# Controlled live QA — Phase F 0.7.4
 
-Η 0.7.3 είναι HTTP response-header parser portability hotfix πάνω στην 0.7.2. Το live 0.7.2 σταμάτησε fail-closed πριν από `chmod`/execution επειδή το `X-Smart-Pro-Agent-Architecture` δεν αναγνώστηκε σωστά στο Debian/HTTP2 path.
+Η 0.7.4 είναι στοχευμένο runtime-layout και restart-observability hotfix πάνω στην 0.7.3.
 
-1. Keep `smart-pro-system.gr` locked while updating. Broker remains 0.9.0.
-2. Revoke the failed 0.7.2 session and clear the Home Assistant session code.
-3. Update the add-on to 0.7.3 and confirm Stopped/manual-only.
-4. Create a fresh 60-minute session, save the code, arm Phase E and then Phase F.
-5. Temporarily unlock `smart-pro-system.gr`.
-6. Press Start exactly once. The persistent one-shot guard remains active before the first Broker request.
-7. Agent response headers must be parsed case-insensitively and still match exact architecture/SHA/execution values.
-8. The verified ELF must pass the glibc loader preflight before `chmod 700`.
-9. Only `MeshAgent -connect` is allowed, sandboxed in the add-on container, max 60 seconds; no operator desktop/terminal/files in this lifecycle QA.
-10. Expected success checkpoint: `MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE`.
-11. Whether success or fail-closed: re-lock the site, revoke the session, and clear the Home Assistant session code.
+1. Κράτησε `smart-pro-system.gr` κλειδωμένο κατά το update. Ο Broker παραμένει 0.9.0.
+2. Αν δεν έχει ήδη γίνει cleanup της προηγούμενης 0.7.3 συνεδρίας, κάνε revoke και καθάρισε το HA session code.
+3. Update το add-on σε 0.7.4 και επιβεβαίωσε `Stopped` / manual-only.
+4. Πριν από live run, έλεγξε στο Home Assistant ότι **Start on boot είναι OFF** και, αν εμφανίζεται επιλογή **Watchdog**, ότι είναι επίσης **OFF**.
+5. Δημιούργησε fresh 60-minute session, αποθήκευσε τον κωδικό και όπλισε Phase E και μετά Phase F.
+6. Ξεκλείδωσε προσωρινά το site και πάτησε Start ακριβώς μία φορά.
+7. Το log πρέπει να εμφανίσει `LAUNCH SAFETY: add-on process instance ...` για κάθε πραγματικό container/process launch.
+8. Πριν από execution πρέπει να εμφανιστεί canonical-layout checkpoint για `meshagent + meshagent.msh`.
+9. Επιτρέπεται μόνο `./meshagent -connect`, sandboxed στο add-on container, max 60s. Δεν γίνεται operator desktop/terminal/files QA σε αυτή τη φάση.
+10. Expected success: `MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE`.
+11. Είτε success είτε fail-closed: ξανακλείδωσε το site, revoke session και καθάρισε το session code πριν από νέα εργασία.
 
-No `-install`, no service persistence, no host mounts, no privileged mode, no automatic second execution attempt.
+Δεν υπάρχει `-install`, service persistence, host mounts, privileged mode ή δεύτερη επιτρεπόμενη execution για τον ίδιο session code.

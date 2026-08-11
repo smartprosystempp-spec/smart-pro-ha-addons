@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.4 — Phase F Canonical Runtime Layout & Launch Telemetry Hotfix
+
+- Αντιμετωπίζει το live 0.7.3 `startup_failed; exit_code=0; category=unknown_startup_exit`.
+- Αφαιρεί την υπόθεση ότι renamed binary/`.msh` names είναι ισοδύναμα για manual connect.
+- Χρησιμοποιεί ιδιωτικό `/tmp/smart-pro-phase-f-runtime/` με filenames ακριβώς `meshagent` και `meshagent.msh`.
+- Εκτελεί από τον ίδιο working directory ακριβώς `./meshagent -connect`.
+- Προσθέτει persistent launch counter στο `/data` και log marker `LAUNCH SAFETY` για κάθε πραγματικό add-on process launch.
+- Διατηρεί το persistent one-shot guard που μπλοκάρει reuse του ίδιου session code πριν από οποιοδήποτε Broker request.
+- Επεκτείνει μόνο την ασφαλή startup classification για help/config-not-loaded output χωρίς να εμφανίζει raw MeshAgent output.
+- Διατηρεί Debian/glibc, strict header/SHA/bytes/ELF/loader checks, one-time Phase E/F tickets, chmod 700 μόνο στο verified binary, max 60s watchdog και mandatory cleanup.
+- Δεν αλλάζει Broker 0.9.0, Vault/AGENTS READY, privileges, host networking ή persistence boundary.
+
 ## 0.7.3 — Phase F HTTP Header Parser Portability Hotfix
 
 - Διορθώνει το live 0.7.2 fail-closed στο Step 4: `binary response architecture header` mismatch.

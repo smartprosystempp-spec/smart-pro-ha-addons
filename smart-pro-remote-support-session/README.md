@@ -1,9 +1,11 @@
-# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.3
+# Smart Pro Remote Support - Προσωρινή Συνεδρία 0.7.4
 
-Phase F HTTP header parser portability hotfix.
+Phase F canonical MeshAgent runtime-layout + launch telemetry hotfix.
 
-Η 0.7.3 διατηρεί το Debian/glibc runtime compatibility και το persistent one-shot guard της 0.7.2. Διορθώνει αποκλειστικά την ανάγνωση των Broker binary response headers ώστε τα HTTP header names να ελέγχονται case-insensitively με portable `awk tolower()` και να λειτουργούν σωστά και όταν HTTP/2 τα αποδίδει lowercase.
+Η 0.7.4 διατηρεί όλα τα security controls της 0.7.3 και αλλάζει μόνο το τελευταίο runtime boundary ώστε να αντιγράφει το canonical Linux manual-connect layout του MeshAgent: ιδιωτικός προσωρινός φάκελος με αρχεία ακριβώς `meshagent` και `meshagent.msh`, `cd` στον ίδιο φάκελο και μία μόνο εκτέλεση `./meshagent -connect`.
 
-Οι τιμές architecture, SHA-256 και execution εξακολουθούν να απαιτούν ακριβή αντιστοίχιση. Πριν από execution παραμένουν οι έλεγχοι ELF/SHA/bytes/loader. Επιτρέπεται μόνο προσωρινό `MeshAgent -connect` έως 60s.
+Προσθέτει επίσης persistent, μη μυστικό launch counter στο `/data`, ώστε κάθε πραγματική εκκίνηση του add-on process να αφήνει σαφή γραμμή `LAUNCH SAFETY` στο log. Το υπάρχον one-shot guard εξακολουθεί να μπλοκάρει τον ίδιο session code πριν από οποιοδήποτε Broker request.
 
-Δεν υπάρχει `-install`, service persistence, automatic restart, host networking, host filesystem mount ή privileged mode.
+Παραμένουν: Debian/glibc runtime, strict SHA/bytes/ELF/architecture checks, `chmod 700` μόνο μετά το Phase F consume, Broker watchdog έως 60s, fail-closed cleanup, `boot: manual_only`, `startup: once`, `host_network:false`, χωρίς host mounts/privileged mode.
+
+Δεν υπάρχει `-install`, service persistence ή δεύτερη επιτρεπόμενη MeshAgent execution για τον ίδιο session code.
