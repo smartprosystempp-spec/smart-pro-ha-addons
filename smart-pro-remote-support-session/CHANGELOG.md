@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — Secure Agent Delivery Phase D
+- Απαιτεί Smart Pro Remote Session Broker 0.7.0+ με Vault `READY` και `AGENTS READY`.
+- Διατηρεί το Secure Bootstrap Delivery της 0.4.0.
+- Ανιχνεύει host architecture (`aarch64` / `amd64`) και τη δεσμεύει στο Phase D request.
+- Λαμβάνει ξεχωριστό one-time Agent Delivery Ticket μετά το επιτυχές `.msh` delivery.
+- Απαιτεί ρητό `execution=false` πριν από οποιαδήποτε λήψη binary.
+- Κατεβάζει προσωρινά το εγκεκριμένο MeshAgent binary μόνο στο `/tmp`.
+- Ελέγχει HTTPS same-origin endpoint, binary Content-Type, architecture/SHA/execution headers, ακριβές byte count, SHA-256, ELF64, little-endian και `e_machine`.
+- Διαγράφει αμέσως το binary μετά την επαλήθευση.
+- **Δεν υπάρχει chmod +x ή MeshAgent execution.**
+- Καμία δημιουργία tunnel, Router ή remote access.
+- Success checkpoint: `AGENT DELIVERED & VERIFIED — NOT EXECUTED`.
+
 ## 0.4.0 — Secure Bootstrap Delivery Phase B
 - Απαιτεί Smart Pro Remote Session Broker 0.5.0+ με MeshCentral Vault `READY`.
 - Διατηρεί validation + one-time ticket flow.

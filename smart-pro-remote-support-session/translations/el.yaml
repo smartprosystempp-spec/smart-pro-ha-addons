@@ -1,7 +1,8 @@
 configuration:
   broker_url:
-    name: "Endpoint Smart Pro Broker"
-    description: "Η ασφαλής HTTPS διεύθυνση του Smart Pro Remote Session Broker. Αφήστε την προεπιλεγμένη τιμή."
+    name: Endpoint Smart Pro Broker
+    description: HTTPS endpoint επικύρωσης της προσωρινής συνεδρίας.
   session_code:
-    name: "Προσωρινός κωδικός συνεδρίας"
-    description: "Ο κωδικός SP-XXXX-XXXX που δημιουργείται από το Smart Pro Admin. Η εφαρμογή ζητά one-time Phase B bootstrap ticket και ελέγχει προσωρινά το επαληθευμένο .msh χωρίς να ξεκινά agent."
+    name: Προσωρινός κωδικός συνεδρίας
+    description: Ο κωδικός SP-XXXX-XXXX που δημιουργεί ο διαχειριστής για τη συγκεκριμένη δοκιμαστική συνεδρία.
+network: {}

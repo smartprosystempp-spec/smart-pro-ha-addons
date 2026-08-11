@@ -1,32 +1,25 @@
-# Οδηγίες — Προσωρινή Συνεδρία 0.4.0
+# Οδηγίες — Προσωρινή Συνεδρία 0.5.0
 
 ## Σκοπός αυτής της έκδοσης
-Η 0.4.0 ολοκληρώνει το **Secure Bootstrap Delivery Phase B** χωρίς πραγματικό remote access:
+Η 0.5.0 ολοκληρώνει το **Secure Agent Delivery Phase D** χωρίς activation:
 
-`session code → validation → one-time ticket → server-side READY .msh → temporary delivery → fingerprint/field verification → secure deletion → audit`
+`session code → validation → bootstrap ticket → READY .msh verify/delete → one-time Agent Delivery Ticket → architecture-bound binary delivery → SHA/ELF verify → secure deletion → audit`
 
-## Διαμόρφωση
-Στην καρτέλα **Διαμόρφωση** παραμένουν δύο πεδία:
+## Προϋποθέσεις
+- Smart Pro Remote Session Broker 0.7.0+.
+- MeshCentral Temporary Bootstrap Vault: `READY`.
+- Agent Binary Readiness: `AGENTS READY` για ARM64 και AMD64.
+- Public site παραμένει κλειδωμένο κατά το controlled QA, εκτός αν απαιτηθεί ρητά διαφορετικό checkpoint.
 
-- **Endpoint Smart Pro Broker**: προρυθμισμένο στο Smart Pro System.
-- **Προσωρινός κωδικός συνεδρίας**: ο κωδικός `SP-XXXX-XXXX` που δημιουργεί ο Admin.
-
-Το enrollment identifier παραμένει αποκλειστικά στον WordPress Broker. Δεν υπάρχει στο GitHub ή στη διαμόρφωση του Home Assistant.
-
-## Controlled QA 0.4.0
-1. Ο Smart Pro Remote Session Broker πρέπει να είναι 0.5.0+ και το MeshCentral Vault να είναι `READY`.
-2. Δημιουργήστε νέο test session code.
-3. Βάλτε τον code στη Διαμόρφωση της εφαρμογής και αποθηκεύστε.
-4. Πατήστε **Έναρξη** μία φορά.
-5. Στο log πρέπει να εμφανιστούν:
-   - validation,
-   - one-time ticket,
-   - ασφαλής προσωρινή λήψη `.msh`,
-   - SHA-256 / size / required-field verification,
-   - ασφαλής διαγραφή,
-   - `SECURE BOOTSTRAP DELIVERY PHASE B: ΟΛΟΚΛΗΡΩΘΗΚΕ`.
-6. Στον Broker πρέπει να καταγραφεί issued / consumed / delivered.
-7. Ανακαλέστε τον test session code και καθαρίστε τον code από τη Διαμόρφωση.
+## Controlled QA 0.5.0
+1. Εγκαταστήστε/ενημερώστε μόνο την εφαρμογή 0.5.0. **Μην την ξεκινήσετε ακόμη.**
+2. Επιβεβαιώστε ότι εμφανίζεται έκδοση 0.5.0 και ότι παραμένει `boot: manual_only` / `startup: once`.
+3. Σταματήστε για checkpoint πριν δημιουργηθεί νέος session code.
+4. Μόνο στο επόμενο checkpoint δημιουργείται νέος test session code και εκτελείται η εφαρμογή μία φορά.
+5. Το επιτυχές log πρέπει να καταλήγει σε:
+   - `AGENT DELIVERED & VERIFIED — NOT EXECUTED`
+   - `SECURE AGENT DELIVERY PHASE D: ΟΛΟΚΛΗΡΩΘΗΚΕ`
+6. Δεν πρέπει να εμφανιστεί καμία ένδειξη chmod, execution, tunnel, Router ή remote access.
 
 ## Σημαντικό
-Η 0.4.0 **δεν** κατεβάζει ή εκτελεί MeshCentral agent και δεν ενεργοποιεί tunnel, Router ή remote access.
+Η 0.5.0 **κατεβάζει μόνο προσωρινά για verification** το εγκεκριμένο MeshAgent binary. Το binary διαγράφεται και δεν εκτελείται. Η ενεργοποίηση agent ανήκει σε ξεχωριστή επόμενη φάση και δεν πρέπει να γίνει στο Phase D checkpoint.

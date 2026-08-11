@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Secure Bootstrap Delivery Phase B μέσω Smart Pro Broker. Η 0.4.0 λαμβάνει προσωρινά το επαληθευμένο .msh, το ελέγχει και το διαγράφει χωρίς να κατεβάζει ή να εκτελεί agent."
-version: "0.4.0"
+description: "Secure Agent Delivery Phase D μέσω Smart Pro Broker. Η 0.5.0 παραδίδει προσωρινά το σωστό READY MeshAgent binary, επαληθεύει SHA-256/ELF/αρχιτεκτονική και το διαγράφει χωρίς chmod ή εκτέλεση."
+version: "0.5.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

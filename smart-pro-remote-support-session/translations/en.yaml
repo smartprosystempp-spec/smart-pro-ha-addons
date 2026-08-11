@@ -1,7 +1,8 @@
 configuration:
   broker_url:
-    name: "Smart Pro Broker endpoint"
-    description: "Secure HTTPS endpoint for the Smart Pro Remote Session Broker. Keep the default value."
+    name: Smart Pro Broker endpoint
+    description: HTTPS endpoint used to validate the temporary support session.
   session_code:
-    name: "Temporary session code"
-    description: "The SP-XXXX-XXXX code created by Smart Pro Admin. The app requests a one-time Phase B bootstrap ticket and temporarily verifies the approved .msh without starting an agent."
+    name: Temporary session code
+    description: The SP-XXXX-XXXX code created by the administrator for this controlled test session.
+network: {}
