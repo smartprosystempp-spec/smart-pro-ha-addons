@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim
 
-ARG BUILD_VERSION="0.7.7"
+ARG BUILD_VERSION="0.8.0"
 ARG BUILD_ARCH
 
 RUN apt-get update \
@@ -10,10 +10,13 @@ RUN apt-get update \
         jq \
         binutils \
         util-linux \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY run.sh /
-RUN chmod a+x /run.sh
+COPY ui_server.py /opt/smart-pro/ui_server.py
+COPY phase-f-0.7.7.sh /opt/smart-pro/phase-f-0.7.7.sh
+RUN chmod a+x /run.sh /opt/smart-pro/ui_server.py /opt/smart-pro/phase-f-0.7.7.sh
 
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \

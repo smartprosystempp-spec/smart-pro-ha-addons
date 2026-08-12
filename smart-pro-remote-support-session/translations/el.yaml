@@ -1,8 +1,8 @@
 configuration:
   broker_url:
     name: Endpoint Smart Pro Broker
-    description: HTTPS endpoint επικύρωσης της προσωρινής συνεδρίας.
+    description: HTTPS endpoint της ασφαλούς υπηρεσίας Smart Pro. Δεν χρειάζεται αλλαγή στην κανονική χρήση.
   session_code:
-    name: Προσωρινός κωδικός συνεδρίας
-    description: Ο κωδικός SP-XXXX-XXXX που δημιουργεί ο διαχειριστής για τη συγκεκριμένη δοκιμαστική συνεδρία.
+    name: Παλιό πεδίο κωδικού (legacy)
+    description: Διατηρείται προσωρινά μόνο για συμβατότητα αναβάθμισης. Η νέα ροή 0.8.0 χρησιμοποιεί το κουμπί «Άνοιγμα Web UI» και δεν διαβάζει αυτό το πεδίο.
 network: {}

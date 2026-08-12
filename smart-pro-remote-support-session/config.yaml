@@ -1,15 +1,20 @@
-name: "Smart Pro Remote Support - Προσωρινή Συνεδρία"
-description: "Controlled MeshAgent Execution Phase F hard-deadline completion update. Η 0.7.7 διατηρεί το verified ephemeral foreground MeshAgent χωρίς -install/service persistence και προσθέτει ανεξάρτητο hard runtime guard: graceful TERM πριν από το όριο και KILL fallback έως το Broker max runtime, με audited runtime και πλήρες cleanup."
-version: "0.7.7"
+name: "Smart Pro Remote Support"
+description: "Customer Code Entry Foundation. Η 0.8.0 προσθέτει ασφαλές Home Assistant Ingress UI για εισαγωγή και validation του προσωρινού support code, χωρίς αποθήκευση του code στη νέα ροή και χωρίς εκτέλεση MeshAgent. Ο live-verified Phase F 0.7.7 core διατηρείται στο package αλλά δεν καλείται από αυτή την έκδοση."
+version: "0.8.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64
   - amd64
-startup: once
+startup: application
 boot: manual_only
 host_network: false
 stage: experimental
 url: "https://smart-pro-system.gr/remote-support/"
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:remote-desktop"
+panel_title: "Smart Pro Support"
+panel_admin: false
 options:
   broker_url: "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 schema:

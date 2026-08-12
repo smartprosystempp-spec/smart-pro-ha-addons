@@ -1,3 +1,13 @@
+# 0.8.0 — Customer Code Entry Foundation
+
+- Adds Home Assistant Ingress UI for customer-facing temporary support-code entry.
+- Changes app lifecycle from one-shot execution to a manually started application service so the Ingress UI can remain available.
+- Performs validation only; no bootstrap ticket, MeshAgent download, execution or remote access is triggered by this build.
+- Rejects non-Ingress source addresses and uses a per-process CSRF token.
+- Does not persist or log the code in the new UI flow.
+- Preserves the exact live-verified 0.7.7 Phase F `run.sh` as `phase-f-0.7.7.sh` for the next integration stage.
+- Keeps the legacy `session_code` schema entry temporarily for upgrade compatibility, but 0.8.0 runtime ignores it.
+
 # 0.7.7 — Phase F Hard Runtime Deadline Completion
 
 - Βασίζεται απευθείας στην επιτυχημένη live 0.7.6 ephemeral-foreground εκτέλεση.

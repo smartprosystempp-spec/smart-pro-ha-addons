@@ -1,23 +1,27 @@
-# Smart Pro Remote Support 0.7.7 — Final Phase F Live QA
+# Smart Pro Remote Support 0.8.0 — Customer Code Entry Foundation
 
-Requires Smart Pro Remote Session Broker 0.9.2 or later.
+## Test goal
 
-## What changed from successful 0.7.6
-The working ephemeral foreground MeshAgent path is unchanged. 0.7.7 only hardens the runtime boundary after live 0.7.6 proved that the device appears in MeshCentral and disconnects after the controlled window.
+Prove that a customer can enter a one-time support code in a proper Smart Pro Home Assistant UI instead of the technical app Configuration screen.
 
-The local hard-deadline guard is independent from Broker watch polling:
-- graceful TERM at `max_runtime - 2s`;
-- KILL fallback by `max_runtime`;
-- audited runtime never reports a successful completion above the Broker maximum;
-- Broker completion must return `result_code=completed`.
+## Expected flow
 
-## Live checkpoint
-Use a fresh session and fresh E/F arming. Start once only. Do not open MeshCentral Remote Desktop / Terminal / Files during Phase F. Export up to 5000 log lines after the add-on stops.
+1. Start the Smart Pro Remote Support app manually.
+2. Open **Web UI**.
+3. Enter a valid `SP-XXXX-XXXX` guest support code.
+4. The page confirms that the code is valid.
+5. Stop here. Version 0.8.0 does not request bootstrap material, does not execute MeshAgent and does not activate remote access.
 
-Expected final lines:
+## Security boundary
 
-`MESHAGENT STARTED, WATCHED & TERMINATED — NO PERSISTENCE`
+- Home Assistant Ingress only; no host port is published.
+- Requests from sources other than the documented Ingress proxy are rejected.
+- HTTPS-only Broker endpoint.
+- Local code-format check before any Broker request.
+- Per-process CSRF token for form submission.
+- `Cache-Control: no-store` and restrictive response headers.
+- Code is not persisted by the UI and is never written to application logs.
 
-`CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ`
+## Known-good execution core
 
-The runtime line must show audited runtime `<= 60s` (normally 60s for the deadline test).
+`phase-f-0.7.7.sh` is the exact 0.7.7 script from the supplied live-tested package and is not executed in this version.

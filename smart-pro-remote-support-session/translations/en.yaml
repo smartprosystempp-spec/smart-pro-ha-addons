@@ -1,8 +1,8 @@
 configuration:
   broker_url:
     name: Smart Pro Broker endpoint
-    description: HTTPS endpoint used to validate the temporary support session.
+    description: HTTPS endpoint for the Smart Pro secure service. No change is normally required.
   session_code:
-    name: Temporary session code
-    description: The SP-XXXX-XXXX code created by the administrator for this controlled test session.
+    name: Legacy session-code field
+    description: Temporarily retained only for upgrade compatibility. The 0.8.0 flow uses Open Web UI and does not read this field.
 network: {}
