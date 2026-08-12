@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support"
-description: "Customer Code Entry Foundation. Η 0.8.0 προσθέτει ασφαλές Home Assistant Ingress UI για εισαγωγή και validation του προσωρινού support code, χωρίς αποθήκευση του code στη νέα ροή και χωρίς εκτέλεση MeshAgent. Ο live-verified Phase F 0.7.7 core διατηρείται στο package αλλά δεν καλείται από αυτή την έκδοση."
-version: "0.8.0"
+description: "Customer Start & Controlled Execution Bridge. Η 0.9.0 συνδέει το ασφαλές Ingress UI με τον live-verified Phase F μηχανισμό: ο κωδικός κρατιέται μόνο προσωρινά στη μνήμη, παραδίδεται στο execution core μέσω private stdin pipe και δεν αποθηκεύεται στη Διαμόρφωση ή στα logs. Η εκτέλεση παραμένει one-shot, fail-closed, ephemeral foreground και hard-limited σε 60s."
+version: "0.9.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64
