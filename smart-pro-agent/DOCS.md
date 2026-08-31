@@ -1,3 +1,7 @@
+# Managed Support 2.0.2
+
+Η 2.0.2 ολοκληρώνει το identity/revocation UX foundation: όταν ο Broker 0.15.1+ επιβεβαιώσει ότι το paired node έχει ανακληθεί, το add-on διαγράφει το τοπικό managed credential και ζητά νέο one-time pairing. Προσωρινά HTTP/network failures δεν διαγράφουν την identity. MeshAgent, MeshCentral enrollment και remote access παραμένουν ανενεργά.
+
 # Smart Pro Managed Remote Support — 2.0.0 Foundation
 
 ## Σκοπός

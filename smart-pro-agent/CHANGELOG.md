@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.2 — Revocation & Safe Re-pair UX
+
+- Requires Broker 0.15.1+ for explicit revoked-node heartbeat state.
+- Distinguishes a real Broker revocation response from temporary HTTP/network failures such as the Plesk site lock.
+- On explicit revocation, removes the local managed credential and moves the UI to a clear “Απαιτείται νέα σύνδεση” state.
+- Allows a fresh one-time pairing without reinstalling the add-on or manually deleting `/data`.
+- Generic invalid/inactive managed credentials also fail closed into a reauthorization-required state.
+- Temporary HTML 401 / network failures preserve the existing identity and continue automatic heartbeat retries.
+- Fixes the customer UI stage label to use the actual running version dynamically.
+- Still does not download or execute MeshAgent and does not enable remote access.
+
 ## 2.0.1 — Safe HTTP Diagnostics Hotfix
 - Built directly from 2.0.0 Managed Identity & Customer UI Foundation.
 - Does not change pairing, heartbeat, credential storage, Broker endpoints or security boundaries.

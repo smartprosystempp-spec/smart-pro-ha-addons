@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.0.1")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.0.2")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -28,8 +28,17 @@ STATE = {
     "status": "unpaired",
     "last_heartbeat": None,
     "last_error": None,
+    "last_installation_ref": None,
     "heartbeat_interval": HEARTBEAT_SECONDS,
 }
+
+
+class BrokerError(RuntimeError):
+    def __init__(self, message, http_status=None, content_type=None, error_code=None):
+        super().__init__(message)
+        self.http_status = http_status
+        self.content_type = content_type
+        self.error_code = error_code
 
 
 def safe_broker_base_url():
@@ -98,10 +107,30 @@ def persist_identity(identity):
         raise
 
 
+def invalidate_local_identity(status, message):
+    with STATE_LOCK:
+        identity = STATE.get("identity")
+        installation_ref = str((identity or {}).get("installation_ref") or STATE.get("last_installation_ref") or "")
+    try:
+        os.unlink(IDENTITY_FILE)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        print(f"[managed] Local credential cleanup failed: {type(exc).__name__}", flush=True)
+        raise RuntimeError("Δεν ήταν δυνατή η ασφαλής κατάργηση της τοπικής ταυτότητας.") from exc
+    with STATE_LOCK:
+        STATE["identity"] = None
+        STATE["status"] = status
+        STATE["last_error"] = message
+        STATE["last_installation_ref"] = installation_ref[:100] if installation_ref else None
+        STATE["heartbeat_interval"] = HEARTBEAT_SECONDS
+    print(f"[managed] Local managed identity cleared: state={status}", flush=True)
+
+
 def broker_post(endpoint, payload, timeout=15):
     base = safe_broker_base_url()
     if not base:
-        raise RuntimeError("Η διεύθυνση της ασφαλούς υπηρεσίας δεν είναι έγκυρη.")
+        raise BrokerError("Η διεύθυνση της ασφαλούς υπηρεσίας δεν είναι έγκυρη.")
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
         base + endpoint,
@@ -117,7 +146,11 @@ def broker_post(endpoint, payload, timeout=15):
     try:
         with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
             raw = response.read(131072)
-            return response.status, json.loads(raw.decode("utf-8")) if raw else {}
+            try:
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise BrokerError("Η ασφαλής υπηρεσία επέστρεψε μη έγκυρη απάντηση.") from exc
+            return response.status, data
     except urllib.error.HTTPError as exc:
         raw = exc.read(131072)
         content_type = str(exc.headers.get("Content-Type") or "unknown").split(";", 1)[0].strip().lower()
@@ -126,13 +159,19 @@ def broker_post(endpoint, payload, timeout=15):
             data = json.loads(raw.decode("utf-8")) if raw else {}
         except (ValueError, UnicodeDecodeError):
             data = {}
+        error_code = str(data.get("code") or "") if isinstance(data, dict) else ""
         if isinstance(data, dict) and data.get("message"):
             message = str(data.get("message"))
         else:
             message = f"Η ασφαλής υπηρεσία απέρριψε το αίτημα (HTTP {exc.code}, {content_type})."
-        raise RuntimeError(message) from exc
+        raise BrokerError(
+            message,
+            http_status=exc.code,
+            content_type=content_type,
+            error_code=error_code or None,
+        ) from exc
     except (urllib.error.URLError, TimeoutError, ssl.SSLError) as exc:
-        raise RuntimeError("Δεν ήταν δυνατή η ασφαλής επικοινωνία με το Smart Pro System.") from exc
+        raise BrokerError("Δεν ήταν δυνατή η ασφαλής επικοινωνία με το Smart Pro System.") from exc
 
 
 def do_pair(code):
@@ -168,6 +207,7 @@ def do_pair(code):
         STATE["identity"] = identity
         STATE["status"] = "paired"
         STATE["last_error"] = None
+        STATE["last_installation_ref"] = None
     return identity
 
 
@@ -187,7 +227,7 @@ def heartbeat_once():
             },
         )
         if status != 200 or not data.get("success"):
-            raise RuntimeError("Το heartbeat δεν επιβεβαιώθηκε.")
+            raise BrokerError("Το heartbeat δεν επιβεβαιώθηκε.")
         if data.get("remote_access") is not False or data.get("execution") is not False or data.get("meshcentral") is not False:
             raise RuntimeError("Η απάντηση παραβίασε το Managed Foundation security boundary.")
         interval = int(data.get("heartbeat_interval_seconds") or HEARTBEAT_SECONDS)
@@ -197,6 +237,22 @@ def heartbeat_once():
             STATE["last_heartbeat"] = str(data.get("last_seen_at") or "")
             STATE["last_error"] = None
             STATE["heartbeat_interval"] = interval
+    except BrokerError as exc:
+        if exc.error_code == "sprsb_managed_node_revoked":
+            invalidate_local_identity(
+                "revoked",
+                "Η σύνδεση με το Smart Pro System έχει ανακληθεί. Απαιτείται νέος κωδικός pairing για επανασύνδεση.",
+            )
+            return
+        if exc.error_code in ("sprsb_managed_node_auth_failed", "sprsb_managed_node_inactive"):
+            invalidate_local_identity(
+                "reauthorization_required",
+                "Η αποθηκευμένη σύνδεση δεν είναι πλέον έγκυρη. Απαιτείται νέος κωδικός pairing.",
+            )
+            return
+        with STATE_LOCK:
+            STATE["status"] = "connection_error"
+            STATE["last_error"] = str(exc)
     except RuntimeError as exc:
         with STATE_LOCK:
             STATE["status"] = "connection_error"
@@ -222,6 +278,7 @@ def snapshot():
             "status": STATE.get("status"),
             "last_heartbeat": STATE.get("last_heartbeat"),
             "last_error": STATE.get("last_error"),
+            "last_installation_ref": STATE.get("last_installation_ref"),
         }
 
 
@@ -234,20 +291,46 @@ def render_page(message=None, error=None):
     identity = state["identity"]
     status = state["status"]
     if not identity:
-        badge = '<span class="badge neutral"><span></span>Δεν έχει γίνει σύνδεση</span>'
-        body = f'''
-          <section class="card hero">
-            <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
-            <h1>Σύνδεση με το Smart Pro System</h1>
-            <p class="lead">Χρησιμοποιήστε τον προσωρινό κωδικό pairing που σας δόθηκε από το Smart Pro Support. Ο κωδικός χρησιμοποιείται μία φορά και δεν αποθηκεύεται από την εφαρμογή.</p>
+        pairing_form = f'''
             <form method="post" action="pair" autocomplete="off">
               <input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}">
               <label for="pairing_code">Κωδικός pairing</label>
               <input id="pairing_code" name="pairing_code" type="text" inputmode="text" maxlength="32" placeholder="SPM-XXXX-XXXX-XXXX-XXXX" required autocapitalize="characters" spellcheck="false">
               <button type="submit">Σύνδεση εγκατάστασης</button>
-            </form>
-            <div class="note"><strong>Ασφάλεια:</strong> Σε αυτή τη φάση ενεργοποιούνται μόνο η ταυτοποίηση της εγκατάστασης και το ασφαλές heartbeat. Δεν ενεργοποιείται απομακρυσμένη πρόσβαση.</div>
-          </section>'''
+            </form>'''
+        previous_installation = esc(state.get("last_installation_ref") or "")
+        if status == "revoked":
+            badge = '<span class="badge revoked"><span></span>Απαιτείται νέα σύνδεση</span>'
+            previous_html = f'<div class="previous">Προηγούμενη εγκατάσταση: <strong>{previous_installation}</strong></div>' if previous_installation else ""
+            body = f'''
+              <section class="card hero">
+                <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
+                <h1>Η σύνδεση με το Smart Pro System ανακλήθηκε</h1>
+                <p class="lead">Το προηγούμενο managed credential καταργήθηκε τοπικά και δεν χρησιμοποιείται πλέον. Για να συνδεθεί ξανά η εγκατάσταση, χρειάζεται νέος one-time κωδικός pairing από το Smart Pro Support.</p>
+                {previous_html}
+                {pairing_form}
+                <div class="note"><strong>Ασφάλεια:</strong> Η ανάκληση δεν ενεργοποιεί απομακρυσμένη πρόσβαση. Η νέα σύνδεση δημιουργεί νέα managed identity και νέο credential.</div>
+              </section>'''
+        elif status == "reauthorization_required":
+            badge = '<span class="badge revoked"><span></span>Απαιτείται επανασύνδεση</span>'
+            body = f'''
+              <section class="card hero">
+                <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
+                <h1>Η αποθηκευμένη σύνδεση δεν είναι πλέον έγκυρη</h1>
+                <p class="lead">Η εφαρμογή κατάργησε το μη αποδεκτό managed credential. Ζητήστε νέο one-time κωδικό pairing από το Smart Pro Support για ασφαλή επανασύνδεση.</p>
+                {pairing_form}
+                <div class="note"><strong>Ασφάλεια:</strong> Δεν ενεργοποιείται MeshAgent ή απομακρυσμένη πρόσβαση σε αυτό το στάδιο.</div>
+              </section>'''
+        else:
+            badge = '<span class="badge neutral"><span></span>Δεν έχει γίνει σύνδεση</span>'
+            body = f'''
+              <section class="card hero">
+                <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
+                <h1>Σύνδεση με το Smart Pro System</h1>
+                <p class="lead">Χρησιμοποιήστε τον προσωρινό κωδικό pairing που σας δόθηκε από το Smart Pro Support. Ο κωδικός χρησιμοποιείται μία φορά και δεν αποθηκεύεται από την εφαρμογή.</p>
+                {pairing_form}
+                <div class="note"><strong>Ασφάλεια:</strong> Σε αυτή τη φάση ενεργοποιούνται μόνο η ταυτοποίηση της εγκατάστασης και το ασφαλές heartbeat. Δεν ενεργοποιείται απομακρυσμένη πρόσβαση.</div>
+              </section>'''
     else:
         if status == "ready":
             badge = '<span class="badge ok"><span></span>Έτοιμο για υποστήριξη</span>'
@@ -274,7 +357,7 @@ def render_page(message=None, error=None):
               <div><span>Τελευταία επιβεβαίωση</span><strong>{last_seen}</strong></div>
             </div>
             {error_html}
-            <div class="note"><strong>Τρέχον στάδιο 2.0.0:</strong> Η εφαρμογή δεν κατεβάζει και δεν εκτελεί MeshAgent και δεν παρέχει remote access. Το επόμενο στάδιο θα ενεργοποιηθεί μόνο μετά από ξεχωριστό QA.</div>
+            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Η εφαρμογή δεν κατεβάζει και δεν εκτελεί MeshAgent και δεν παρέχει remote access. Το επόμενο στάδιο θα ενεργοποιηθεί μόνο μετά από ξεχωριστό QA.</div>
           </section>'''
     notices = ""
     if message:
@@ -288,10 +371,10 @@ def render_page(message=None, error=None):
 :root{{--bg:#0b1118;--card:#121b25;--line:#263444;--text:#f3f7fb;--muted:#a9b7c6;--blue:#4db4e6;--green:#69d58c;--amber:#f0b84b;--red:#ff7070;}}
 *{{box-sizing:border-box}}body{{margin:0;background:linear-gradient(180deg,#0b1118,#0d151e);color:var(--text);font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}}
 .shell{{max-width:980px;margin:0 auto;padding:30px 20px 56px}}header{{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:20px}}.brand{{font-weight:760;font-size:20px;letter-spacing:.1px}}.sub{{color:var(--muted);font-size:13px;margin-top:2px}}
-.badge{{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#101923;color:#d9e4ee;font-size:13px;white-space:nowrap}}.badge span{{width:9px;height:9px;border-radius:50%;background:#7c8b99;box-shadow:0 0 0 4px rgba(124,139,153,.09)}}.badge.ok span{{background:var(--green)}}.badge.warn span{{background:var(--amber)}}.badge.info span{{background:var(--blue)}}
+.badge{{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#101923;color:#d9e4ee;font-size:13px;white-space:nowrap}}.badge span{{width:9px;height:9px;border-radius:50%;background:#7c8b99;box-shadow:0 0 0 4px rgba(124,139,153,.09)}}.badge.ok span{{background:var(--green)}}.badge.warn span{{background:var(--amber)}}.badge.info span{{background:var(--blue)}}.badge.revoked span{{background:var(--red)}}
 .card{{background:rgba(18,27,37,.97);border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 42px rgba(0,0,0,.2)}}.hero{{padding:34px}}.eyebrow{{font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--blue);margin-bottom:10px}}h1{{font-size:30px;line-height:1.15;margin:0 0 12px}}.lead{{color:#c4d0db;max-width:760px;margin:0 0 28px}}
 form{{max-width:620px}}label{{display:block;font-weight:700;margin:0 0 8px}}input{{width:100%;padding:14px 15px;border-radius:11px;border:1px solid #34475b;background:#0d151e;color:#fff;font-size:16px;letter-spacing:.06em;outline:none}}input:focus{{border-color:var(--blue);box-shadow:0 0 0 3px rgba(77,180,230,.14)}}button{{margin-top:14px;border:0;border-radius:11px;background:#2f9fd2;color:#071018;font-weight:800;padding:13px 18px;font-size:15px;cursor:pointer}}
-.note{{margin-top:24px;padding:15px 17px;border:1px solid #2c3c4c;border-radius:12px;background:#0e1720;color:#b8c6d3}}.notice{{margin:0 0 15px;padding:13px 16px;border-radius:12px;border:1px solid var(--line)}}.notice.success{{background:rgba(105,213,140,.08);border-color:rgba(105,213,140,.35)}}.notice.error,.inline-warning{{background:rgba(255,112,112,.08);border:1px solid rgba(255,112,112,.35);color:#ffd0d0}}.inline-warning{{padding:12px 14px;border-radius:10px;margin-top:18px}}
+.previous{{margin:-8px 0 22px;color:var(--muted)}}.previous strong{{color:var(--text)}}.note{{margin-top:24px;padding:15px 17px;border:1px solid #2c3c4c;border-radius:12px;background:#0e1720;color:#b8c6d3}}.notice{{margin:0 0 15px;padding:13px 16px;border-radius:12px;border:1px solid var(--line)}}.notice.success{{background:rgba(105,213,140,.08);border-color:rgba(105,213,140,.35)}}.notice.error,.inline-warning{{background:rgba(255,112,112,.08);border:1px solid rgba(255,112,112,.35);color:#ffd0d0}}.inline-warning{{padding:12px 14px;border-radius:10px;margin-top:18px}}
 .facts{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0}}.facts div{{border:1px solid var(--line);border-radius:12px;background:#0f1821;padding:15px}}.facts span{{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}}.facts strong{{display:block;font-size:14px;overflow-wrap:anywhere}}footer{{margin-top:16px;color:#718295;font-size:12px;text-align:center}}
 @media(max-width:700px){{header{{align-items:flex-start;flex-direction:column}}.hero{{padding:24px 20px}}h1{{font-size:25px}}.facts{{grid-template-columns:1fr}}}}
 </style></head><body><div class="shell"><header><div><div class="brand">Smart Pro System</div><div class="sub">Ασφαλής απομακρυσμένη υποστήριξη</div></div>{badge}</header>{notices}{body}<footer>Managed Support Foundation · έκδοση {esc(VERSION)}</footer></div></body></html>'''

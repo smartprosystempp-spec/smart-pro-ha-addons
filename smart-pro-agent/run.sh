@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="${SMART_PRO_VERSION:-2.0.0}"
+VERSION="${SMART_PRO_VERSION:-2.0.2}"
 PORT="8098"
 
 umask 077
