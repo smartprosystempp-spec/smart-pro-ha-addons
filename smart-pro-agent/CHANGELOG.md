@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1 — Safe HTTP Diagnostics Hotfix
+- Built directly from 2.0.0 Managed Identity & Customer UI Foundation.
+- Does not change pairing, heartbeat, credential storage, Broker endpoints or security boundaries.
+- Adds safe HTTP diagnostics for Broker rejection: status code and Content-Type only.
+- Does not log pairing codes, node secrets, request bodies or response bodies.
+- Temporary Support 0.9.0 remains byte-for-byte unchanged.
+
 ## 2.0.0 — Managed Identity & Customer UI Foundation
 - Replaces the legacy 1.0.1 runtime architecture with an identity-only managed foundation.
 - Keeps the stable slug `smart_pro_agent`.

@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.0.0")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.0.1")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -120,11 +120,16 @@ def broker_post(endpoint, payload, timeout=15):
             return response.status, json.loads(raw.decode("utf-8")) if raw else {}
     except urllib.error.HTTPError as exc:
         raw = exc.read(131072)
+        content_type = str(exc.headers.get("Content-Type") or "unknown").split(";", 1)[0].strip().lower()
+        print(f"[managed] Broker {endpoint}: HTTP {exc.code}, Content-Type={content_type}", flush=True)
         try:
             data = json.loads(raw.decode("utf-8")) if raw else {}
         except (ValueError, UnicodeDecodeError):
             data = {}
-        message = str(data.get("message") or "Η ασφαλής υπηρεσία απέρριψε το αίτημα.")
+        if isinstance(data, dict) and data.get("message"):
+            message = str(data.get("message"))
+        else:
+            message = f"Η ασφαλής υπηρεσία απέρριψε το αίτημα (HTTP {exc.code}, {content_type})."
         raise RuntimeError(message) from exc
     except (urllib.error.URLError, TimeoutError, ssl.SSLError) as exc:
         raise RuntimeError("Δεν ήταν δυνατή η ασφαλής επικοινωνία με το Smart Pro System.") from exc

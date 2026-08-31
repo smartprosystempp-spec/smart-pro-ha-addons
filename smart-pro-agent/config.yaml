@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
-description: "Managed Identity & Customer UI Foundation. Η 2.0.0 προσθέτει ασφαλές one-time pairing και authenticated heartbeat με το Smart Pro Remote Session Broker 0.15.0+. Δεν ενεργοποιεί MeshCentral enrollment, MeshAgent ή απομακρυσμένη πρόσβαση."
-version: "2.0.0"
+description: "Managed Identity & Customer UI Foundation. Η 2.0.1 διατηρεί ασφαλές one-time pairing και authenticated heartbeat με το Smart Pro Remote Session Broker 0.15.0+. Δεν ενεργοποιεί MeshCentral enrollment, MeshAgent ή απομακρυσμένη πρόσβαση."
+version: "2.0.1"
 slug: "smart_pro_agent"
 arch:
   - aarch64
