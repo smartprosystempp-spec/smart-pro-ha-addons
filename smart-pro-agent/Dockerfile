@@ -1,9 +1,23 @@
-FROM alpine:latest
-# Εγκατάσταση βασικών εργαλείων για το Linux του Home Assistant
-RUN apk add --no-cache wget curl libc6-compat bash sudo
+FROM debian:bookworm-slim
 
-# Αντιγραφή του αρχείου εκκίνησης
-COPY run.sh /
-RUN chmod a+x /run.sh
+ARG BUILD_VERSION="2.0.0"
+ARG BUILD_ARCH
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY run.sh /run.sh
+COPY ui_server.py /opt/smart-pro/ui_server.py
+RUN chmod a+x /run.sh /opt/smart-pro/ui_server.py
+
+ENV SMART_PRO_VERSION="${BUILD_VERSION}" \
+    SMART_PRO_ARCH="${BUILD_ARCH}"
+
+LABEL io.hass.version="${BUILD_VERSION}" \
+      io.hass.type="app" \
+      io.hass.arch="${BUILD_ARCH}"
 
 CMD [ "/run.sh" ]

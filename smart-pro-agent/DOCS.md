@@ -1,15 +1,27 @@
-# Οδηγίες — Smart Pro System - Remote Support
+# Smart Pro Managed Remote Support — 2.0.0 Foundation
 
 ## Σκοπός
-Η εφαρμογή προορίζεται για εγκαταστάσεις που έχουν ενταχθεί στη μόνιμη διαχειριζόμενη υποστήριξη της Smart Pro System.
+Η εφαρμογή παραμένει εγκατεστημένη σε διαχειριζόμενη εγκατάσταση, αλλά η έκδοση 2.0.0 δεν παρέχει ακόμη απομακρυσμένη πρόσβαση. Δημιουργεί μόνο ασφαλή managed identity και heartbeat.
 
-## Κανονική λειτουργία
-- Η εφαρμογή μπορεί να ξεκινά μαζί με το Home Assistant σύμφωνα με την τρέχουσα ρύθμιση της έκδοσης 1.0.1.
-- Η σύνδεση και η διαχείριση πραγματοποιούνται από την υποδομή Smart Pro Remote Support.
-- Ο πελάτης δεν χρειάζεται να χρησιμοποιεί AnyDesk ή TeamViewer.
+## Pairing
+1. Ο διαχειριστής δημιουργεί one-time pairing code στον Smart Pro Remote Session Broker 0.15.0+.
+2. Ο πελάτης ανοίγει το Ingress UI της εφαρμογής και εισάγει τον κωδικό.
+3. Ο κωδικός καταναλώνεται μία φορά και δεν αποθηκεύεται από την εφαρμογή.
+4. Η εφαρμογή αποθηκεύει μόνο το managed node identity/secret στο `/data/managed_identity.json` με permissions 0600.
+5. Από εκεί και μετά αποστέλλεται authenticated heartbeat περίπου κάθε 60 δευτερόλεπτα.
+
+## Security boundary
+- `host_network: false`
+- architectures: `aarch64`, `amd64`
+- HTTPS-only Broker URL
+- CA/TLS verification από το λειτουργικό
+- no MeshAgent binary
+- no `.msh`
+- no chmod/exec agent path
+- no remote access
+- no technician presence
+- no session code persistence
+- managed secret δεν εμφανίζεται στο UI ή στα logs
 
 ## Σημαντικό
-Η εφαρμογή δεν πρέπει να εγκαθίσταται ως προσωρινή λύση σε εφάπαξ πελάτη. Για αυτή την περίπτωση αναπτύσσεται ξεχωριστή εφαρμογή «Προσωρινή Συνεδρία».
-
-## Αντιμετώπιση προβλημάτων
-Σε περίπτωση αποσύνδεσης, ελέγξτε πρώτα τη σύνδεση Internet και το Αρχείο καταγραφής της εφαρμογής. Μην κοινοποιείτε δημόσια logs που περιέχουν identifiers σύνδεσης ή άλλα τεχνικά στοιχεία που δεν προορίζονται για δημοσίευση.
+Η Temporary/Guest εφαρμογή `smart_pro_remote_support_session` 0.9.0 είναι ξεχωριστό component και δεν τροποποιείται από αυτό το release.
