@@ -1,17 +1,23 @@
-# Managed Support 2.0.2
+# Smart Pro System - Remote Support 2.1.0
 
-Η 2.0.2 ολοκληρώνει το identity/revocation UX foundation: όταν ο Broker 0.15.1+ επιβεβαιώσει ότι το paired node έχει ανακληθεί, το add-on διαγράφει το τοπικό managed credential και ζητά νέο one-time pairing. Προσωρινά HTTP/network failures δεν διαγράφουν την identity. MeshAgent, MeshCentral enrollment και remote access παραμένουν ανενεργά.
+Managed Bootstrap Authorization QA για μόνιμες εγκαταστάσεις Smart Pro System.
 
-# Smart Pro System - Remote Support 2.0.0
-
-Managed Identity & Customer UI Foundation για μόνιμες εγκαταστάσεις Smart Pro System.
-
-Η 2.0.0 υλοποιεί μόνο:
-- one-time pairing προς Smart Pro Remote Session Broker 0.15.0+,
-- τοπική ασφαλή αποθήκευση managed node credential στο `/data`,
+Η 2.1.0 διατηρεί το live-verified foundation της 2.0.2:
+- one-time pairing,
+- ασφαλή τοπική managed identity,
 - authenticated heartbeat,
-- Home Assistant Ingress customer UI.
+- recovery μετά από προσωρινό network/Plesk failure,
+- explicit revoke detection,
+- local credential cleanup και safe re-pair.
 
-Δεν υλοποιεί MeshCentral enrollment, MeshAgent download/execution, remote desktop, terminal, file access ή technician-presence detection.
+## Νέο στην 2.1.0
 
-Το slug παραμένει `smart_pro_agent`, ώστε να αποτελεί την ελεγχόμενη εξέλιξη της legacy 1.0.1.
+Προστίθεται μόνο το κουμπί **«Έλεγχος ασφαλούς προετοιμασίας»** για ελεγχόμενο QA με Broker 0.17.0+.
+
+Η εφαρμογή:
+1. ζητά ένα 180-second one-time bootstrap authorization ticket,
+2. το κρατά μόνο στη μνήμη,
+3. το καταναλώνει αμέσως με δεύτερο authenticated request,
+4. απορρίπτει fail-closed οποιαδήποτε απάντηση δηλώνει `.msh` delivery, Agent delivery, execution ή remote access.
+
+Δεν λαμβάνει enrollment identifier ή `.msh`, δεν κατεβάζει/chmod/εκτελεί MeshAgent και δεν ενεργοποιεί remote access.

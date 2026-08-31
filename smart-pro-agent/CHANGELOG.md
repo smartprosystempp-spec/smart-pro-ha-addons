@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 — Managed Bootstrap Authorization QA
+
+- Built directly from live-verified 2.0.2 Revocation & Safe Re-pair UX.
+- Requires Broker 0.17.0+ and a READY Managed enrollment source.
+- Adds a user-triggered “Έλεγχος ασφαλούς προετοιμασίας” while the managed node is paired.
+- Requests a 180-second one-time bootstrap authorization ticket and immediately consumes it using the existing managed credential.
+- Ticket exists only in process memory for the request/consume exchange and is never persisted or rendered.
+- Strictly rejects any response that claims `.msh` delivery, Agent delivery, execution or remote access.
+- Does not request or receive an enrollment identifier or `.msh` content.
+- Does not download/chmod/execute MeshAgent.
+- Existing pairing, heartbeat, revoked-state cleanup and safe re-pair behavior remain unchanged.
+
 ## 2.0.2 — Revocation & Safe Re-pair UX
 
 - Requires Broker 0.15.1+ for explicit revoked-node heartbeat state.

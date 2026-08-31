@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.0.2")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.1.0")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -30,6 +30,10 @@ STATE = {
     "last_error": None,
     "last_installation_ref": None,
     "heartbeat_interval": HEARTBEAT_SECONDS,
+    "bootstrap_status": "not_checked",
+    "bootstrap_checked_at": None,
+    "bootstrap_error": None,
+    "bootstrap_source_hint": None,
 }
 
 
@@ -124,6 +128,10 @@ def invalidate_local_identity(status, message):
         STATE["last_error"] = message
         STATE["last_installation_ref"] = installation_ref[:100] if installation_ref else None
         STATE["heartbeat_interval"] = HEARTBEAT_SECONDS
+        STATE["bootstrap_status"] = "not_checked"
+        STATE["bootstrap_checked_at"] = None
+        STATE["bootstrap_error"] = None
+        STATE["bootstrap_source_hint"] = None
     print(f"[managed] Local managed identity cleared: state={status}", flush=True)
 
 
@@ -208,7 +216,85 @@ def do_pair(code):
         STATE["status"] = "paired"
         STATE["last_error"] = None
         STATE["last_installation_ref"] = None
+        STATE["bootstrap_status"] = "not_checked"
+        STATE["bootstrap_checked_at"] = None
+        STATE["bootstrap_error"] = None
+        STATE["bootstrap_source_hint"] = None
     return identity
+
+
+def bootstrap_authorization_check():
+    with STATE_LOCK:
+        identity = STATE.get("identity")
+    if not identity:
+        raise RuntimeError("Η εγκατάσταση δεν είναι συνδεδεμένη.")
+    if ARCH not in ("aarch64", "amd64"):
+        raise RuntimeError("Η αρχιτεκτονική αυτής της εγκατάστασης δεν υποστηρίζεται ακόμη.")
+
+    try:
+        status, data = broker_post(
+            "/bootstrap/request",
+            {
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+                "client_version": VERSION,
+                "architecture": ARCH,
+            },
+        )
+        if status != 201 or not data.get("success"):
+            raise RuntimeError("Δεν εκδόθηκε ασφαλές bootstrap authorization.")
+        if data.get("msh_delivery") is not False or data.get("agent_delivery") is not False or data.get("execution") is not False or data.get("remote_access") is not False:
+            raise RuntimeError("Η απάντηση παραβίασε το authorization-only security boundary.")
+        ticket = str(data.get("bootstrap_ticket") or "")
+        if not re.fullmatch(r"SPMB-[A-Za-z0-9_-]{43}", ticket):
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρο bootstrap authorization ticket.")
+
+        status2, data2 = broker_post(
+            "/bootstrap/consume",
+            {
+                "bootstrap_ticket": ticket,
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+                "client_version": VERSION,
+                "architecture": ARCH,
+            },
+        )
+        ticket = None
+        if status2 != 200 or not data2.get("success") or data2.get("authorized") is not True:
+            raise RuntimeError("Το ασφαλές bootstrap authorization δεν καταναλώθηκε.")
+        if data2.get("msh_delivery") is not False or data2.get("agent_delivery") is not False or data2.get("execution") is not False or data2.get("remote_access") is not False:
+            raise RuntimeError("Η απάντηση παραβίασε το authorization-only security boundary.")
+        hint = str(data2.get("source_fingerprint_hint") or "")
+        if hint and not re.fullmatch(r"[a-fA-F0-9]{12}", hint):
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρο source fingerprint hint.")
+        checked_at = str(data2.get("consumed_at") or "")
+        with STATE_LOCK:
+            STATE["bootstrap_status"] = "authorized"
+            STATE["bootstrap_checked_at"] = checked_at
+            STATE["bootstrap_error"] = None
+            STATE["bootstrap_source_hint"] = hint.lower() if hint else None
+        return checked_at
+    except BrokerError as exc:
+        if exc.error_code == "sprsb_managed_node_revoked":
+            invalidate_local_identity(
+                "revoked",
+                "Η σύνδεση με το Smart Pro System έχει ανακληθεί. Απαιτείται νέος κωδικός pairing για επανασύνδεση.",
+            )
+        elif exc.error_code in ("sprsb_managed_node_auth_failed", "sprsb_managed_node_inactive"):
+            invalidate_local_identity(
+                "reauthorization_required",
+                "Η αποθηκευμένη σύνδεση δεν είναι πλέον έγκυρη. Απαιτείται νέος κωδικός pairing.",
+            )
+        else:
+            with STATE_LOCK:
+                STATE["bootstrap_status"] = "error"
+                STATE["bootstrap_error"] = str(exc)
+        raise RuntimeError(str(exc)) from exc
+    except RuntimeError as exc:
+        with STATE_LOCK:
+            STATE["bootstrap_status"] = "error"
+            STATE["bootstrap_error"] = str(exc)
+        raise
 
 
 def heartbeat_once():
@@ -279,6 +365,10 @@ def snapshot():
             "last_heartbeat": STATE.get("last_heartbeat"),
             "last_error": STATE.get("last_error"),
             "last_installation_ref": STATE.get("last_installation_ref"),
+            "bootstrap_status": STATE.get("bootstrap_status"),
+            "bootstrap_checked_at": STATE.get("bootstrap_checked_at"),
+            "bootstrap_error": STATE.get("bootstrap_error"),
+            "bootstrap_source_hint": STATE.get("bootstrap_source_hint"),
         }
 
 
@@ -346,6 +436,21 @@ def render_page(message=None, error=None):
             status_text = "Γίνεται η πρώτη ασφαλής επιβεβαίωση της εγκατάστασης με το Smart Pro System."
         last_seen = esc(state.get("last_heartbeat") or "Αναμονή πρώτου heartbeat")
         error_html = f'<div class="inline-warning">{esc(state.get("last_error"))}</div>' if state.get("last_error") else ""
+        bootstrap_status = state.get("bootstrap_status") or "not_checked"
+        if bootstrap_status == "authorized":
+            bootstrap_label = "Επιβεβαιώθηκε"
+            bootstrap_detail = "Το one-time authorization εκδόθηκε και καταναλώθηκε χωρίς λήψη αρχείου .msh."
+        elif bootstrap_status == "error":
+            bootstrap_label = "Αποτυχία ελέγχου"
+            bootstrap_detail = esc(state.get("bootstrap_error") or "Ο έλεγχος δεν ολοκληρώθηκε.")
+        else:
+            bootstrap_label = "Δεν έχει ελεγχθεί"
+            bootstrap_detail = "Ο έλεγχος είναι authorization-only και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
+        bootstrap_form = f'''
+            <div class="bootstrap-box">
+              <div><span>Ασφαλής προετοιμασία</span><strong>{esc(bootstrap_label)}</strong><p>{bootstrap_detail}</p></div>
+              <form method="post" action="bootstrap-check"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button class="secondary" type="submit">Έλεγχος ασφαλούς προετοιμασίας</button></form>
+            </div>'''
         body = f'''
           <section class="card hero">
             <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
@@ -357,7 +462,8 @@ def render_page(message=None, error=None):
               <div><span>Τελευταία επιβεβαίωση</span><strong>{last_seen}</strong></div>
             </div>
             {error_html}
-            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Η εφαρμογή δεν κατεβάζει και δεν εκτελεί MeshAgent και δεν παρέχει remote access. Το επόμενο στάδιο θα ενεργοποιηθεί μόνο μετά από ξεχωριστό QA.</div>
+            {bootstrap_form}
+            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο one-time bootstrap authorization check. Δεν λαμβάνεται `.msh`, δεν κατεβαίνει/εκτελείται MeshAgent και δεν παρέχεται remote access.</div>
           </section>'''
     notices = ""
     if message:
@@ -373,10 +479,10 @@ def render_page(message=None, error=None):
 .shell{{max-width:980px;margin:0 auto;padding:30px 20px 56px}}header{{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:20px}}.brand{{font-weight:760;font-size:20px;letter-spacing:.1px}}.sub{{color:var(--muted);font-size:13px;margin-top:2px}}
 .badge{{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#101923;color:#d9e4ee;font-size:13px;white-space:nowrap}}.badge span{{width:9px;height:9px;border-radius:50%;background:#7c8b99;box-shadow:0 0 0 4px rgba(124,139,153,.09)}}.badge.ok span{{background:var(--green)}}.badge.warn span{{background:var(--amber)}}.badge.info span{{background:var(--blue)}}.badge.revoked span{{background:var(--red)}}
 .card{{background:rgba(18,27,37,.97);border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 42px rgba(0,0,0,.2)}}.hero{{padding:34px}}.eyebrow{{font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--blue);margin-bottom:10px}}h1{{font-size:30px;line-height:1.15;margin:0 0 12px}}.lead{{color:#c4d0db;max-width:760px;margin:0 0 28px}}
-form{{max-width:620px}}label{{display:block;font-weight:700;margin:0 0 8px}}input{{width:100%;padding:14px 15px;border-radius:11px;border:1px solid #34475b;background:#0d151e;color:#fff;font-size:16px;letter-spacing:.06em;outline:none}}input:focus{{border-color:var(--blue);box-shadow:0 0 0 3px rgba(77,180,230,.14)}}button{{margin-top:14px;border:0;border-radius:11px;background:#2f9fd2;color:#071018;font-weight:800;padding:13px 18px;font-size:15px;cursor:pointer}}
+form{{max-width:620px}}label{{display:block;font-weight:700;margin:0 0 8px}}input{{width:100%;padding:14px 15px;border-radius:11px;border:1px solid #34475b;background:#0d151e;color:#fff;font-size:16px;letter-spacing:.06em;outline:none}}input:focus{{border-color:var(--blue);box-shadow:0 0 0 3px rgba(77,180,230,.14)}}button{{margin-top:14px;border:0;border-radius:11px;background:#2f9fd2;color:#071018;font-weight:800;padding:13px 18px;font-size:15px;cursor:pointer}}button.secondary{{margin-top:0;background:#182635;color:#dce8f2;border:1px solid #34475b}}
 .previous{{margin:-8px 0 22px;color:var(--muted)}}.previous strong{{color:var(--text)}}.note{{margin-top:24px;padding:15px 17px;border:1px solid #2c3c4c;border-radius:12px;background:#0e1720;color:#b8c6d3}}.notice{{margin:0 0 15px;padding:13px 16px;border-radius:12px;border:1px solid var(--line)}}.notice.success{{background:rgba(105,213,140,.08);border-color:rgba(105,213,140,.35)}}.notice.error,.inline-warning{{background:rgba(255,112,112,.08);border:1px solid rgba(255,112,112,.35);color:#ffd0d0}}.inline-warning{{padding:12px 14px;border-radius:10px;margin-top:18px}}
-.facts{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0}}.facts div{{border:1px solid var(--line);border-radius:12px;background:#0f1821;padding:15px}}.facts span{{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}}.facts strong{{display:block;font-size:14px;overflow-wrap:anywhere}}footer{{margin-top:16px;color:#718295;font-size:12px;text-align:center}}
-@media(max-width:700px){{header{{align-items:flex-start;flex-direction:column}}.hero{{padding:24px 20px}}h1{{font-size:25px}}.facts{{grid-template-columns:1fr}}}}
+.facts{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0}}.bootstrap-box{{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px;padding:16px 17px;border:1px solid #2c3c4c;border-radius:12px;background:#0e1720}}.bootstrap-box span{{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}}.bootstrap-box strong{{display:block}}.bootstrap-box p{{margin:4px 0 0;color:#9fb0c0;font-size:13px}}.bootstrap-box form{{flex:0 0 auto}}.facts div{{border:1px solid var(--line);border-radius:12px;background:#0f1821;padding:15px}}.facts span{{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}}.facts strong{{display:block;font-size:14px;overflow-wrap:anywhere}}footer{{margin-top:16px;color:#718295;font-size:12px;text-align:center}}
+@media(max-width:700px){{header{{align-items:flex-start;flex-direction:column}}.hero{{padding:24px 20px}}h1{{font-size:25px}}.facts{{grid-template-columns:1fr}}.bootstrap-box{{align-items:stretch;flex-direction:column}}}}
 </style></head><body><div class="shell"><header><div><div class="brand">Smart Pro System</div><div class="sub">Ασφαλής απομακρυσμένη υποστήριξη</div></div>{badge}</header>{notices}{body}<footer>Managed Support Foundation · έκδοση {esc(VERSION)}</footer></div></body></html>'''
 
 
@@ -432,6 +538,16 @@ class Handler(BaseHTTPRequestHandler):
                 identity = do_pair(code)
                 heartbeat_once()
                 self.send_html(render_page(message=f"Η εγκατάσταση {identity['installation_ref']} συνδέθηκε με επιτυχία."))
+            except RuntimeError as exc:
+                self.send_html(render_page(error=str(exc)), 400)
+            return
+        if path.endswith("/bootstrap-check") or path == "/bootstrap-check":
+            if not snapshot()["identity"]:
+                self.send_html(render_page(error="Η εγκατάσταση δεν είναι συνδεδεμένη."), 409)
+                return
+            try:
+                bootstrap_authorization_check()
+                self.send_html(render_page(message="Ο ασφαλής έλεγχος προετοιμασίας ολοκληρώθηκε χωρίς λήψη .msh ή ενεργοποίηση απομακρυσμένης πρόσβασης."))
             except RuntimeError as exc:
                 self.send_html(render_page(error=str(exc)), 400)
             return
