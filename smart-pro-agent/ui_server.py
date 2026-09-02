@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.2.0")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.3.0")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -41,6 +41,11 @@ STATE = {
     "settings_error": None,
     "settings_sha_hint": None,
     "settings_bytes": None,
+    "agent_status": "not_checked",
+    "agent_checked_at": None,
+    "agent_error": None,
+    "agent_sha_hint": None,
+    "agent_bytes": None,
 }
 
 
@@ -144,6 +149,11 @@ def invalidate_local_identity(status, message):
         STATE["settings_error"] = None
         STATE["settings_sha_hint"] = None
         STATE["settings_bytes"] = None
+        STATE["agent_status"] = "not_checked"
+        STATE["agent_checked_at"] = None
+        STATE["agent_error"] = None
+        STATE["agent_sha_hint"] = None
+        STATE["agent_bytes"] = None
     print(f"[managed] Local managed identity cleared: state={status}", flush=True)
 
 
@@ -237,6 +247,11 @@ def do_pair(code):
         STATE["settings_error"] = None
         STATE["settings_sha_hint"] = None
         STATE["settings_bytes"] = None
+        STATE["agent_status"] = "not_checked"
+        STATE["agent_checked_at"] = None
+        STATE["agent_error"] = None
+        STATE["agent_sha_hint"] = None
+        STATE["agent_bytes"] = None
     return identity
 
 
@@ -472,6 +487,165 @@ def secure_settings_delivery_check():
             STATE["settings_error"] = str(exc)
         raise
 
+
+def broker_post_binary(endpoint, payload, timeout=45, max_bytes=67108865):
+    base = safe_broker_base_url()
+    if not base:
+        raise BrokerError("Η διεύθυνση της ασφαλούς υπηρεσίας δεν είναι έγκυρη.")
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        base + endpoint,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/octet-stream",
+            "User-Agent": f"SmartProManagedSupport/{VERSION}",
+        },
+        method="POST",
+    )
+    context = ssl.create_default_context()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+            content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            raw = response.read(max_bytes)
+            if len(raw) >= max_bytes:
+                raise BrokerError("Το πρόγραμμα σύνδεσης ξεπέρασε το επιτρεπόμενο μέγεθος.")
+            return response.status, content_type, dict(response.headers.items()), raw
+    except urllib.error.HTTPError as exc:
+        raw = exc.read(131072)
+        content_type = str(exc.headers.get("Content-Type") or "unknown").split(";", 1)[0].strip().lower()
+        print(f"[managed] Broker {endpoint}: HTTP {exc.code}, Content-Type={content_type}", flush=True)
+        try:
+            data = json.loads(raw.decode("utf-8")) if raw else {}
+        except (ValueError, UnicodeDecodeError):
+            data = {}
+        error_code = str(data.get("code") or "") if isinstance(data, dict) else ""
+        message = str(data.get("message") or "") if isinstance(data, dict) else ""
+        if not message:
+            message = f"Η ασφαλής υπηρεσία απέρριψε το αίτημα (HTTP {exc.code}, {content_type})."
+        raise BrokerError(message, http_status=exc.code, content_type=content_type, error_code=error_code or None) from exc
+    except (urllib.error.URLError, TimeoutError, ssl.SSLError) as exc:
+        raise BrokerError("Δεν ήταν δυνατή η ασφαλής επικοινωνία με το Smart Pro System.") from exc
+
+
+def verify_agent_and_discard(raw, expected_sha, expected_bytes):
+    if len(raw) != expected_bytes:
+        raise RuntimeError("Το μέγεθος του προγράμματος σύνδεσης δεν συμφωνεί με το εγκεκριμένο.")
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if not secrets.compare_digest(actual_sha, expected_sha):
+        raise RuntimeError("Το ψηφιακό αποτύπωμα του προγράμματος σύνδεσης δεν συμφωνεί με το εγκεκριμένο.")
+    if len(raw) < 64 or raw[:4] != b"\x7fELF" or raw[4] != 2 or raw[5] != 1:
+        raise RuntimeError("Το πρόγραμμα σύνδεσης δεν έχει την αναμενόμενη Linux 64-bit μορφή.")
+    machine = raw[18] | (raw[19] << 8)
+    expected_machine = 183 if ARCH == "aarch64" else 62 if ARCH == "amd64" else -1
+    if machine != expected_machine:
+        raise RuntimeError("Το πρόγραμμα σύνδεσης δεν αντιστοιχεί στην αρχιτεκτονική αυτής της εγκατάστασης.")
+    temp_path = None
+    try:
+        fd, temp_path = tempfile.mkstemp(prefix="smart_pro_managed_agent_", suffix=".bin", dir="/tmp")
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        with open(temp_path, "rb") as handle:
+            disk_raw = handle.read(expected_bytes + 1)
+        if len(disk_raw) != expected_bytes or not secrets.compare_digest(hashlib.sha256(disk_raw).hexdigest(), expected_sha):
+            raise RuntimeError("Η τοπική επαλήθευση του προσωρινού προγράμματος σύνδεσης απέτυχε.")
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise RuntimeError("Δεν ήταν δυνατή η ασφαλής διαγραφή του προσωρινού προγράμματος σύνδεσης.") from exc
+    return actual_sha
+
+
+def secure_agent_delivery_check():
+    with STATE_LOCK:
+        identity = STATE.get("identity")
+    if not identity:
+        raise RuntimeError("Η εγκατάσταση δεν είναι συνδεδεμένη.")
+    if ARCH not in ("aarch64", "amd64"):
+        raise RuntimeError("Η αρχιτεκτονική αυτής της εγκατάστασης δεν υποστηρίζεται ακόμη.")
+    try:
+        # A fresh verified settings pass is mandatory immediately before agent delivery.
+        secure_settings_delivery_check()
+        with STATE_LOCK:
+            identity = STATE.get("identity")
+        if not identity:
+            raise RuntimeError("Η εγκατάσταση χρειάζεται νέα σύνδεση.")
+        status, data = broker_post(
+            "/agent/request",
+            {
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+                "client_version": VERSION,
+                "architecture": ARCH,
+            },
+        )
+        if status != 201 or not data.get("success") or data.get("agent_delivery_authorized") is not True:
+            raise RuntimeError("Δεν εγκρίθηκε η ασφαλής λήψη του προγράμματος σύνδεσης.")
+        if data.get("agent_delivered") is not False or data.get("execution") is not False or data.get("remote_access") is not False:
+            raise RuntimeError("Η απάντηση παραβίασε το όριο ασφαλείας της τρέχουσας έκδοσης.")
+        ticket = str(data.get("agent_ticket") or "")
+        if not re.fullmatch(r"SPMA-[A-Za-z0-9_-]{43}", ticket):
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρο ticket λήψης προγράμματος.")
+        expected_sha = str(data.get("expected_sha256") or "").lower()
+        expected_bytes = int(data.get("expected_bytes") or 0)
+        if not re.fullmatch(r"[a-f0-9]{64}", expected_sha) or expected_bytes < 100000 or expected_bytes > 67108864:
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρα στοιχεία ελέγχου του προγράμματος.")
+        status2, content_type, headers, raw = broker_post_binary(
+            "/agent/consume",
+            {
+                "agent_ticket": ticket,
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+                "client_version": VERSION,
+                "architecture": ARCH,
+            },
+        )
+        ticket = None
+        if status2 != 200 or content_type != "application/octet-stream":
+            raise RuntimeError("Η ασφαλής λήψη του προγράμματος σύνδεσης δεν ολοκληρώθηκε.")
+        header_sha = str(headers.get("X-Smart-Pro-Agent-SHA256") or headers.get("X-Smart-Pro-Agent-Sha256") or "").lower()
+        header_arch = str(headers.get("X-Smart-Pro-Agent-Architecture") or "").lower()
+        header_exec = str(headers.get("X-Smart-Pro-Agent-Execution") or "").lower()
+        if header_sha and not secrets.compare_digest(header_sha, expected_sha):
+            raise RuntimeError("Τα στοιχεία του προγράμματος άλλαξαν μεταξύ έγκρισης και λήψης.")
+        if header_arch and not secrets.compare_digest(header_arch, ARCH):
+            raise RuntimeError("Η υπηρεσία επέστρεψε πρόγραμμα άλλης αρχιτεκτονικής.")
+        if header_exec and header_exec != "disabled":
+            raise RuntimeError("Η απάντηση δεν επιβεβαιώνει ότι η εκτέλεση παραμένει απενεργοποιημένη.")
+        actual_sha = verify_agent_and_discard(raw, expected_sha, expected_bytes)
+        checked_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with STATE_LOCK:
+            STATE["agent_status"] = "verified"
+            STATE["agent_checked_at"] = checked_at
+            STATE["agent_error"] = None
+            STATE["agent_sha_hint"] = actual_sha[:12]
+            STATE["agent_bytes"] = expected_bytes
+        print(f"[managed] Secure managed agent verified and discarded: bytes={expected_bytes}, sha256={actual_sha[:12]}... execution=disabled", flush=True)
+        return checked_at
+    except BrokerError as exc:
+        if exc.error_code == "sprsb_managed_node_revoked":
+            invalidate_local_identity("revoked", "Η σύνδεση με το Smart Pro System έχει ανακληθεί. Απαιτείται νέος κωδικός pairing για επανασύνδεση.")
+        elif exc.error_code in ("sprsb_managed_node_auth_failed", "sprsb_managed_node_inactive"):
+            invalidate_local_identity("reauthorization_required", "Η αποθηκευμένη σύνδεση δεν είναι πλέον έγκυρη. Απαιτείται νέος κωδικός pairing.")
+        else:
+            with STATE_LOCK:
+                STATE["agent_status"] = "error"
+                STATE["agent_error"] = str(exc)
+        raise RuntimeError(str(exc)) from exc
+    except RuntimeError as exc:
+        with STATE_LOCK:
+            STATE["agent_status"] = "error"
+            STATE["agent_error"] = str(exc)
+        raise
+
+
 def heartbeat_once():
     with STATE_LOCK:
         identity = STATE.get("identity")
@@ -549,6 +723,11 @@ def snapshot():
             "settings_error": STATE.get("settings_error"),
             "settings_sha_hint": STATE.get("settings_sha_hint"),
             "settings_bytes": STATE.get("settings_bytes"),
+            "agent_status": STATE.get("agent_status"),
+            "agent_checked_at": STATE.get("agent_checked_at"),
+            "agent_error": STATE.get("agent_error"),
+            "agent_sha_hint": STATE.get("agent_sha_hint"),
+            "agent_bytes": STATE.get("agent_bytes"),
         }
 
 
@@ -616,20 +795,20 @@ def render_page(message=None, error=None):
             status_text = "Γίνεται η πρώτη ασφαλής επιβεβαίωση της εγκατάστασης με το Smart Pro System."
         last_seen = esc(state.get("last_heartbeat") or "Αναμονή πρώτου heartbeat")
         error_html = f'<div class="inline-warning">{esc(state.get("last_error"))}</div>' if state.get("last_error") else ""
-        settings_status = state.get("settings_status") or "not_checked"
+        settings_status = state.get("agent_status") or "not_checked"
         if settings_status == "verified":
             settings_label = "Επιβεβαιώθηκε"
-            settings_detail = "Οι ασφαλείς ρυθμίσεις λήφθηκαν, ελέγχθηκαν και διαγράφηκαν αμέσως. Δεν ξεκίνησε απομακρυσμένη πρόσβαση."
+            settings_detail = "Το πρόγραμμα σύνδεσης λήφθηκε, ελέγχθηκε και διαγράφηκε αμέσως. Δεν εκτελέστηκε και δεν ξεκίνησε απομακρυσμένη πρόσβαση."
         elif settings_status == "error":
             settings_label = "Αποτυχία ελέγχου"
-            settings_detail = esc(state.get("settings_error") or "Ο έλεγχος δεν ολοκληρώθηκε.")
+            settings_detail = esc(state.get("agent_error") or "Ο έλεγχος δεν ολοκληρώθηκε.")
         else:
             settings_label = "Δεν έχει ελεγχθεί"
-            settings_detail = "Ο έλεγχος λαμβάνει προσωρινά μόνο τις απαραίτητες ρυθμίσεις, τις επαληθεύει και τις διαγράφει."
+            settings_detail = "Ο έλεγχος λαμβάνει προσωρινά το εγκεκριμένο πρόγραμμα της σωστής αρχιτεκτονικής, το επαληθεύει και το διαγράφει."
         bootstrap_form = f'''
             <div class="bootstrap-box">
-              <div><span>Ασφαλής λήψη ρυθμίσεων</span><strong>{esc(settings_label)}</strong><p>{settings_detail}</p></div>
-              <form method="post" action="delivery-check"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button class="secondary" type="submit">Έλεγχος ασφαλούς λήψης ρυθμίσεων</button></form>
+              <div><span>Ασφαλής λήψη προγράμματος σύνδεσης</span><strong>{esc(settings_label)}</strong><p>{settings_detail}</p></div>
+              <form method="post" action="agent-check"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button class="secondary" type="submit">Έλεγχος ασφαλούς λήψης προγράμματος</button></form>
             </div>'''
         body = f'''
           <section class="card hero">
@@ -643,7 +822,7 @@ def render_page(message=None, error=None):
             </div>
             {error_html}
             {bootstrap_form}
-            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο προσωρινή λήψη και επαλήθευση των ασφαλών ρυθμίσεων. Το αρχείο διαγράφεται αμέσως. Δεν κατεβαίνει/εκτελείται MeshAgent και δεν παρέχεται remote access.</div>
+            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο προσωρινή λήψη και επαλήθευση του εγκεκριμένου προγράμματος σύνδεσης. Το αρχείο διαγράφεται αμέσως. Δεν εκτελείται/εγκαθίσταται και δεν παρέχεται απομακρυσμένη πρόσβαση.</div>
           </section>'''
     notices = ""
     if message:
@@ -718,6 +897,16 @@ class Handler(BaseHTTPRequestHandler):
                 identity = do_pair(code)
                 heartbeat_once()
                 self.send_html(render_page(message=f"Η εγκατάσταση {identity['installation_ref']} συνδέθηκε με επιτυχία."))
+            except RuntimeError as exc:
+                self.send_html(render_page(error=str(exc)), 400)
+            return
+        if path.endswith("/agent-check") or path == "/agent-check":
+            if not snapshot()["identity"]:
+                self.send_html(render_page(error="Η εγκατάσταση δεν είναι συνδεδεμένη."), 409)
+                return
+            try:
+                secure_agent_delivery_check()
+                self.send_html(render_page(message="Το πρόγραμμα σύνδεσης λήφθηκε, επαληθεύτηκε και διαγράφηκε χωρίς να εκτελεστεί και χωρίς ενεργοποίηση απομακρυσμένης πρόσβασης."))
             except RuntimeError as exc:
                 self.send_html(render_page(error=str(exc)), 400)
             return

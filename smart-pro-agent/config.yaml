@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
-description: "Managed Secure Settings Delivery Foundation. Η 2.2.0 λαμβάνει μόνο μία φορά το επαληθευμένο managed .msh μετά από ασφαλή προετοιμασία, το ελέγχει τοπικά και το διαγράφει αμέσως. Δεν κατεβάζει/εκτελεί MeshAgent και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
-version: "2.2.0"
+description: "Managed Agent Verification Foundation. Η 2.3.0 λαμβάνει προσωρινά μόνο το επαληθευμένο πρόγραμμα σύνδεσης της σωστής αρχιτεκτονικής, το ελέγχει τοπικά και το διαγράφει αμέσως. Δεν το εκτελεί και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
+version: "2.3.0"
 slug: "smart_pro_agent"
 arch:
   - aarch64

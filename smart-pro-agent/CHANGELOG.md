@@ -1,58 +1,6 @@
-# Changelog
+# 2.3.0 — Ασφαλής λήψη και επαλήθευση προγράμματος
 
-## 2.2.0 — Managed Secure Settings Delivery QA
-
-- Built directly from live-verified 2.1.0.
-- Requires Broker 0.18.0+ and READY Managed enrollment source.
-- Adds one customer action that first performs a fresh bootstrap authorization and then requests a 120-second one-time settings-delivery ticket.
-- Receives only the verified managed `.msh`; enrollment identifier is never received.
-- Verifies expected SHA-256, byte count, required Mesh fields, WSS and the opaque `SPMNG-*` managed node label.
-- Writes the `.msh` only to a restrictive temporary file for disk verification and deletes it immediately in a `finally` cleanup path.
-- Does not persist `.msh` in `/data`.
-- Does not download/chmod/execute MeshAgent and does not enable remote access.
-- Pairing, heartbeat, revoke/re-pair behavior remains unchanged.
-
-## 2.1.0 — Managed Bootstrap Authorization QA
-
-- Built directly from live-verified 2.0.2 Revocation & Safe Re-pair UX.
-- Requires Broker 0.17.0+ and a READY Managed enrollment source.
-- Adds a user-triggered “Έλεγχος ασφαλούς προετοιμασίας” while the managed node is paired.
-- Requests a 180-second one-time bootstrap authorization ticket and immediately consumes it using the existing managed credential.
-- Ticket exists only in process memory for the request/consume exchange and is never persisted or rendered.
-- Strictly rejects any response that claims `.msh` delivery, Agent delivery, execution or remote access.
-- Does not request or receive an enrollment identifier or `.msh` content.
-- Does not download/chmod/execute MeshAgent.
-- Existing pairing, heartbeat, revoked-state cleanup and safe re-pair behavior remain unchanged.
-
-## 2.0.2 — Revocation & Safe Re-pair UX
-
-- Requires Broker 0.15.1+ for explicit revoked-node heartbeat state.
-- Distinguishes a real Broker revocation response from temporary HTTP/network failures such as the Plesk site lock.
-- On explicit revocation, removes the local managed credential and moves the UI to a clear “Απαιτείται νέα σύνδεση” state.
-- Allows a fresh one-time pairing without reinstalling the add-on or manually deleting `/data`.
-- Generic invalid/inactive managed credentials also fail closed into a reauthorization-required state.
-- Temporary HTML 401 / network failures preserve the existing identity and continue automatic heartbeat retries.
-- Fixes the customer UI stage label to use the actual running version dynamically.
-- Still does not download or execute MeshAgent and does not enable remote access.
-
-## 2.0.1 — Safe HTTP Diagnostics Hotfix
-- Built directly from 2.0.0 Managed Identity & Customer UI Foundation.
-- Does not change pairing, heartbeat, credential storage, Broker endpoints or security boundaries.
-- Adds safe HTTP diagnostics for Broker rejection: status code and Content-Type only.
-- Does not log pairing codes, node secrets, request bodies or response bodies.
-- Temporary Support 0.9.0 remains byte-for-byte unchanged.
-
-## 2.0.0 — Managed Identity & Customer UI Foundation
-- Replaces the legacy 1.0.1 runtime architecture with an identity-only managed foundation.
-- Keeps the stable slug `smart_pro_agent`.
-- Removes direct static MeshAgent/.msh download and permanent `/data/meshagent` execution path.
-- Restricts supported architectures to `aarch64` and `amd64` for the controlled rollout.
-- Changes `host_network` from `true` to `false`.
-- Adds Home Assistant Ingress customer UI on internal port 8098.
-- Adds one-time pairing against Smart Pro Remote Session Broker 0.15.0+.
-- Stores only the resulting managed node credential locally with restrictive file permissions.
-- Adds authenticated heartbeat.
-- Does NOT enable MeshCentral enrollment, MeshAgent execution, remote access or technician presence.
-
-## 1.0.1 — Legacy baseline
-- Historical managed runtime. Preserved only as rollback/source reference and not used as the security model for 2.x.
+- Προστέθηκε one-time λήψη του εγκεκριμένου MeshAgent μετά από φρέσκια επαλήθευση managed ρυθμίσεων.
+- Έλεγχος σωστής αρχιτεκτονικής, ακριβούς μεγέθους και SHA-256.
+- Προσωρινό αρχείο με permissions 0600 και άμεση διαγραφή μετά τον έλεγχο.
+- Δεν εκτελείται το πρόγραμμα και δεν ενεργοποιείται απομακρυσμένη πρόσβαση.
