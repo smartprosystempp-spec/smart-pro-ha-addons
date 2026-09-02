@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
-description: "Managed Controlled Runtime. Η 2.5.0 επιτρέπει μόνο μία δοκιμαστική σύνδεση έως 60 δευτερόλεπτα μετά από έγκριση Smart Pro και ρητή ενέργεια πελάτη. Δεν εγκαθιστά υπηρεσία και δεν αφήνει μόνιμη πρόσβαση."
-version: "2.5.0"
+description: "Managed Controlled Runtime PTY Compatibility Hotfix. Η 2.5.1 διατηρεί την ίδια ελεγχόμενη δοκιμή έως 60 δευτερόλεπτα και εκκινεί το MeshAgent -connect μέσα σε απομονωμένο pseudo-terminal για συμβατότητα χωρίς εγκατάσταση υπηρεσίας ή μόνιμη πρόσβαση."
+version: "2.5.1"
 slug: "smart_pro_agent"
 arch:
   - aarch64

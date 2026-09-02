@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.5.0")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.5.1")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -834,7 +834,7 @@ def controlled_session_run(session_ref):
         with STATE_LOCK:
             STATE["execution_status"] = "running"
             STATE["execution_started_at"] = str(data2.get("started_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-        proc = subprocess.Popen([agent_path, "-connect"], cwd=tempdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, close_fds=True)
+        proc = subprocess.Popen(["script", "-q", "-e", "-c", "./meshagent -connect", "/dev/null"], cwd=tempdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, close_fds=True)
         result_code = "runtime_limit"
         while True:
             elapsed = int(time.monotonic() - started_monotonic)
