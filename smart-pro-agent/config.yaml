@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
-description: "Managed Agent Verification Foundation. Η 2.3.0 λαμβάνει προσωρινά μόνο το επαληθευμένο πρόγραμμα σύνδεσης της σωστής αρχιτεκτονικής, το ελέγχει τοπικά και το διαγράφει αμέσως. Δεν το εκτελεί και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
-version: "2.3.0"
+description: "Managed Customer Consent Foundation. Η 2.4.0 εμφανίζει εγκεκριμένη συνεδρία Smart Pro Support και καταγράφει τη ρητή αποδοχή του πελάτη. Δεν εκτελεί πρόγραμμα σύνδεσης και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
+version: "2.4.0"
 slug: "smart_pro_agent"
 arch:
   - aarch64

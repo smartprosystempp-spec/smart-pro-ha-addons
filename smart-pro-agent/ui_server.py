@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.3.0")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.4.0")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -46,6 +46,8 @@ STATE = {
     "agent_error": None,
     "agent_sha_hint": None,
     "agent_bytes": None,
+    "support_session": None,
+    "support_session_error": None,
 }
 
 
@@ -154,6 +156,8 @@ def invalidate_local_identity(status, message):
         STATE["agent_error"] = None
         STATE["agent_sha_hint"] = None
         STATE["agent_bytes"] = None
+        STATE["support_session"] = None
+        STATE["support_session_error"] = None
     print(f"[managed] Local managed identity cleared: state={status}", flush=True)
 
 
@@ -252,6 +256,8 @@ def do_pair(code):
         STATE["agent_error"] = None
         STATE["agent_sha_hint"] = None
         STATE["agent_bytes"] = None
+        STATE["support_session"] = None
+        STATE["support_session_error"] = None
     return identity
 
 
@@ -646,6 +652,47 @@ def secure_agent_delivery_check():
         raise
 
 
+def accept_support_session():
+    with STATE_LOCK:
+        identity = STATE.get("identity")
+        session = STATE.get("support_session")
+    if not identity:
+        raise RuntimeError("Η εγκατάσταση δεν είναι συνδεδεμένη.")
+    if not session or session.get("status") != "authorized":
+        raise RuntimeError("Δεν υπάρχει συνεδρία που να περιμένει αποδοχή.")
+    try:
+        status, data = broker_post(
+            "/session/accept",
+            {
+                "session_ref": session["session_ref"],
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+            },
+        )
+        if status != 200 or not data.get("success") or data.get("accepted") is not True:
+            raise RuntimeError("Η αποδοχή της συνεδρίας δεν ολοκληρώθηκε.")
+        if data.get("execution") is not False or data.get("remote_access") is not False or data.get("technician_connected") is not False:
+            raise RuntimeError("Η απάντηση παραβίασε το όριο ασφαλείας της τρέχουσας έκδοσης.")
+        with STATE_LOCK:
+            STATE["support_session"] = {
+                "session_ref": str(data.get("session_ref") or session["session_ref"]),
+                "status": "accepted",
+                "expires_at": str(data.get("expires_at") or session.get("expires_at") or ""),
+                "accepted_at": str(data.get("accepted_at") or ""),
+            }
+            STATE["support_session_error"] = None
+        print("[managed] Customer consent recorded. execution=disabled remote_access=disabled", flush=True)
+        return True
+    except BrokerError as exc:
+        with STATE_LOCK:
+            STATE["support_session_error"] = str(exc)
+        raise RuntimeError(str(exc)) from exc
+    except RuntimeError as exc:
+        with STATE_LOCK:
+            STATE["support_session_error"] = str(exc)
+        raise
+
+
 def heartbeat_once():
     with STATE_LOCK:
         identity = STATE.get("identity")
@@ -667,11 +714,28 @@ def heartbeat_once():
             raise RuntimeError("Η απάντηση παραβίασε το Managed Foundation security boundary.")
         interval = int(data.get("heartbeat_interval_seconds") or HEARTBEAT_SECONDS)
         interval = max(30, min(300, interval))
+        session = data.get("support_session")
+        parsed_session = None
+        if session is not None:
+            if not isinstance(session, dict):
+                raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρη κατάσταση συνεδρίας.")
+            session_ref = str(session.get("session_ref") or "")
+            session_status = str(session.get("status") or "")
+            if not re.fullmatch(r"SPSS-[A-F0-9]{24}", session_ref) or session_status not in ("authorized", "accepted"):
+                raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρη συνεδρία υποστήριξης.")
+            parsed_session = {
+                "session_ref": session_ref,
+                "status": session_status,
+                "expires_at": str(session.get("expires_at") or ""),
+                "accepted_at": str(session.get("accepted_at") or ""),
+            }
         with STATE_LOCK:
             STATE["status"] = "ready"
             STATE["last_heartbeat"] = str(data.get("last_seen_at") or "")
             STATE["last_error"] = None
             STATE["heartbeat_interval"] = interval
+            STATE["support_session"] = parsed_session
+            STATE["support_session_error"] = None
     except BrokerError as exc:
         if exc.error_code == "sprsb_managed_node_revoked":
             invalidate_local_identity(
@@ -728,6 +792,8 @@ def snapshot():
             "agent_error": STATE.get("agent_error"),
             "agent_sha_hint": STATE.get("agent_sha_hint"),
             "agent_bytes": STATE.get("agent_bytes"),
+            "support_session": dict(STATE.get("support_session")) if STATE.get("support_session") else None,
+            "support_session_error": STATE.get("support_session_error"),
         }
 
 
@@ -795,21 +861,30 @@ def render_page(message=None, error=None):
             status_text = "Γίνεται η πρώτη ασφαλής επιβεβαίωση της εγκατάστασης με το Smart Pro System."
         last_seen = esc(state.get("last_heartbeat") or "Αναμονή πρώτου heartbeat")
         error_html = f'<div class="inline-warning">{esc(state.get("last_error"))}</div>' if state.get("last_error") else ""
-        settings_status = state.get("agent_status") or "not_checked"
-        if settings_status == "verified":
-            settings_label = "Επιβεβαιώθηκε"
-            settings_detail = "Το πρόγραμμα σύνδεσης λήφθηκε, ελέγχθηκε και διαγράφηκε αμέσως. Δεν εκτελέστηκε και δεν ξεκίνησε απομακρυσμένη πρόσβαση."
-        elif settings_status == "error":
-            settings_label = "Αποτυχία ελέγχου"
-            settings_detail = esc(state.get("agent_error") or "Ο έλεγχος δεν ολοκληρώθηκε.")
-        else:
-            settings_label = "Δεν έχει ελεγχθεί"
-            settings_detail = "Ο έλεγχος λαμβάνει προσωρινά το εγκεκριμένο πρόγραμμα της σωστής αρχιτεκτονικής, το επαληθεύει και το διαγράφει."
-        bootstrap_form = f'''
-            <div class="bootstrap-box">
-              <div><span>Ασφαλής λήψη προγράμματος σύνδεσης</span><strong>{esc(settings_label)}</strong><p>{settings_detail}</p></div>
-              <form method="post" action="agent-check"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button class="secondary" type="submit">Έλεγχος ασφαλούς λήψης προγράμματος</button></form>
+        session = state.get("support_session")
+        if session and session.get("status") == "authorized":
+            support_status = "Περιμένει τη δική σας έγκριση"
+            consent_box = f'''
+            <div class="bootstrap-box consent-box">
+              <div><span>Εγκεκριμένη συνεδρία Smart Pro Support</span><strong>Υπάρχει διαθέσιμη συνεδρία υποστήριξης</strong><p>Η Smart Pro έχει εγκρίνει συνεδρία για αυτή την εγκατάσταση. Η αποδοχή σας καταγράφει τη συναίνεση, αλλά δεν ανοίγει ακόμη απομακρυσμένη πρόσβαση.</p></div>
+              <form method="post" action="session-accept"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button type="submit">Αποδοχή συνεδρίας</button></form>
             </div>'''
+        elif session and session.get("status") == "accepted":
+            support_status = "Η συνεδρία εγκρίθηκε από εσάς"
+            accepted_at = esc(session.get("accepted_at") or "")
+            consent_box = f'''
+            <div class="bootstrap-box consent-box accepted">
+              <div><span>Εγκεκριμένη συνεδρία Smart Pro Support</span><strong>Η αποδοχή καταγράφηκε</strong><p>Η συναίνεσή σας έχει καταγραφεί{(" · " + accepted_at) if accepted_at else ""}. Το πρόγραμμα σύνδεσης δεν έχει ξεκινήσει ακόμη και δεν υπάρχει απομακρυσμένη πρόσβαση.</p></div>
+            </div>'''
+        else:
+            support_status = "Δεν υπάρχει ενεργή συνεδρία"
+            consent_box = '''
+            <div class="bootstrap-box">
+              <div><span>Συνεδρία υποστήριξης</span><strong>Δεν υπάρχει εγκεκριμένη συνεδρία αυτή τη στιγμή</strong><p>Όταν εγκριθεί συνεδρία από τη Smart Pro, θα εμφανιστεί εδώ και θα ζητηθεί η ρητή αποδοχή σας.</p></div>
+            </div>'''
+        session_error = state.get("support_session_error")
+        if session_error:
+            consent_box += f'<div class="inline-warning">{esc(session_error)}</div>'
         body = f'''
           <section class="card hero">
             <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
@@ -817,12 +892,12 @@ def render_page(message=None, error=None):
             <p class="lead">{esc(status_text)}</p>
             <div class="facts">
               <div><span>Εγκατάσταση</span><strong>{esc(identity.get("installation_ref"))}</strong></div>
-              <div><span>Κατάσταση υποστήριξης</span><strong>Δεν υπάρχει ενεργή συνεδρία</strong></div>
+              <div><span>Κατάσταση υποστήριξης</span><strong>{esc(support_status)}</strong></div>
               <div><span>Τελευταία επιβεβαίωση</span><strong>{last_seen}</strong></div>
             </div>
             {error_html}
-            {bootstrap_form}
-            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο προσωρινή λήψη και επαλήθευση του εγκεκριμένου προγράμματος σύνδεσης. Το αρχείο διαγράφεται αμέσως. Δεν εκτελείται/εγκαθίσταται και δεν παρέχεται απομακρυσμένη πρόσβαση.</div>
+            {consent_box}
+            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Η εφαρμογή μπορεί να εμφανίσει μία εγκεκριμένη συνεδρία και να καταγράψει τη ρητή αποδοχή σας. Δεν εκτελεί ακόμη το πρόγραμμα σύνδεσης και δεν παρέχει απομακρυσμένη πρόσβαση.</div>
           </section>'''
     notices = ""
     if message:
@@ -897,6 +972,16 @@ class Handler(BaseHTTPRequestHandler):
                 identity = do_pair(code)
                 heartbeat_once()
                 self.send_html(render_page(message=f"Η εγκατάσταση {identity['installation_ref']} συνδέθηκε με επιτυχία."))
+            except RuntimeError as exc:
+                self.send_html(render_page(error=str(exc)), 400)
+            return
+        if path.endswith("/session-accept") or path == "/session-accept":
+            if not snapshot()["identity"]:
+                self.send_html(render_page(error="Η εγκατάσταση δεν είναι συνδεδεμένη."), 409)
+                return
+            try:
+                accept_support_session()
+                self.send_html(render_page(message="Η συνεδρία εγκρίθηκε από εσάς. Δεν έχει ξεκινήσει ακόμη απομακρυσμένη πρόσβαση."))
             except RuntimeError as exc:
                 self.send_html(render_page(error=str(exc)), 400)
             return
