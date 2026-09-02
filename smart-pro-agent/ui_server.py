@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import base64
+import hashlib
 import html
 import json
 import os
@@ -13,7 +15,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.1.0")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.2.0")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -34,6 +36,11 @@ STATE = {
     "bootstrap_checked_at": None,
     "bootstrap_error": None,
     "bootstrap_source_hint": None,
+    "settings_status": "not_checked",
+    "settings_checked_at": None,
+    "settings_error": None,
+    "settings_sha_hint": None,
+    "settings_bytes": None,
 }
 
 
@@ -132,6 +139,11 @@ def invalidate_local_identity(status, message):
         STATE["bootstrap_checked_at"] = None
         STATE["bootstrap_error"] = None
         STATE["bootstrap_source_hint"] = None
+        STATE["settings_status"] = "not_checked"
+        STATE["settings_checked_at"] = None
+        STATE["settings_error"] = None
+        STATE["settings_sha_hint"] = None
+        STATE["settings_bytes"] = None
     print(f"[managed] Local managed identity cleared: state={status}", flush=True)
 
 
@@ -220,6 +232,11 @@ def do_pair(code):
         STATE["bootstrap_checked_at"] = None
         STATE["bootstrap_error"] = None
         STATE["bootstrap_source_hint"] = None
+        STATE["settings_status"] = "not_checked"
+        STATE["settings_checked_at"] = None
+        STATE["settings_error"] = None
+        STATE["settings_sha_hint"] = None
+        STATE["settings_bytes"] = None
     return identity
 
 
@@ -297,6 +314,164 @@ def bootstrap_authorization_check():
         raise
 
 
+
+def parse_msh_bytes(raw):
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError("Το αρχείο ρυθμίσεων δεν είναι έγκυρο κείμενο.") from exc
+    out = {}
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, value = [part.strip() for part in line.split("=", 1)]
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", key):
+            out[key] = value
+    return out
+
+
+def verify_msh_and_discard(raw, expected_sha256, expected_bytes, expected_agent_label):
+    if not isinstance(raw, (bytes, bytearray)):
+        raise RuntimeError("Το αρχείο ρυθμίσεων δεν έχει έγκυρη μορφή.")
+    if len(raw) < 20 or len(raw) > 262144 or len(raw) != int(expected_bytes):
+        raise RuntimeError("Το αρχείο ρυθμίσεων έχει μη αναμενόμενο μέγεθος.")
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if not secrets.compare_digest(actual_sha, str(expected_sha256).lower()):
+        raise RuntimeError("Ο έλεγχος ακεραιότητας του αρχείου ρυθμίσεων απέτυχε.")
+
+    parsed = parse_msh_bytes(raw)
+    for required in ("MeshName", "MeshType", "MeshID", "ServerID", "MeshServer"):
+        if not parsed.get(required):
+            raise RuntimeError("Το αρχείο ρυθμίσεων δεν περιέχει όλα τα απαιτούμενα πεδία.")
+    if not str(parsed.get("MeshServer") or "").lower().startswith("wss://"):
+        raise RuntimeError("Η διεύθυνση της απομακρυσμένης υπηρεσίας δεν είναι ασφαλής.")
+    if expected_agent_label:
+        if not re.fullmatch(r"SPMNG-[A-F0-9]{16}", expected_agent_label):
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρη ταυτότητα managed node.")
+        if not secrets.compare_digest(str(parsed.get("agentName") or ""), expected_agent_label):
+            raise RuntimeError("Το αρχείο ρυθμίσεων δεν αντιστοιχεί σε αυτή την εγκατάσταση.")
+
+    temp_path = None
+    try:
+        fd, temp_path = tempfile.mkstemp(prefix="smart_pro_managed_", suffix=".msh", dir="/tmp")
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        with open(temp_path, "rb") as handle:
+            disk_raw = handle.read(262145)
+        if len(disk_raw) != len(raw) or not secrets.compare_digest(hashlib.sha256(disk_raw).hexdigest(), actual_sha):
+            raise RuntimeError("Η τοπική επαλήθευση του προσωρινού αρχείου απέτυχε.")
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise RuntimeError("Δεν ήταν δυνατή η ασφαλής διαγραφή του προσωρινού αρχείου ρυθμίσεων.") from exc
+    return actual_sha
+
+
+def secure_settings_delivery_check():
+    with STATE_LOCK:
+        identity = STATE.get("identity")
+    if not identity:
+        raise RuntimeError("Η εγκατάσταση δεν είναι συνδεδεμένη.")
+    if ARCH not in ("aarch64", "amd64"):
+        raise RuntimeError("Η αρχιτεκτονική αυτής της εγκατάστασης δεν υποστηρίζεται ακόμη.")
+
+    try:
+        # Fresh authorization is mandatory immediately before settings delivery.
+        bootstrap_authorization_check()
+        with STATE_LOCK:
+            identity = STATE.get("identity")
+        if not identity:
+            raise RuntimeError("Η εγκατάσταση χρειάζεται νέα σύνδεση.")
+
+        status, data = broker_post(
+            "/msh/request",
+            {
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+                "client_version": VERSION,
+                "architecture": ARCH,
+            },
+        )
+        if status != 201 or not data.get("success") or data.get("msh_delivery_authorized") is not True:
+            raise RuntimeError("Δεν εγκρίθηκε η ασφαλής λήψη ρυθμίσεων.")
+        if data.get("msh_delivered") is not False or data.get("agent_delivery") is not False or data.get("execution") is not False or data.get("remote_access") is not False:
+            raise RuntimeError("Η απάντηση παραβίασε το όριο ασφαλείας της τρέχουσας έκδοσης.")
+        ticket = str(data.get("msh_ticket") or "")
+        if not re.fullmatch(r"SPMD-[A-Za-z0-9_-]{43}", ticket):
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρο ticket λήψης.")
+        expected_sha = str(data.get("expected_sha256") or "").lower()
+        expected_bytes = int(data.get("expected_bytes") or 0)
+        agent_label = str(data.get("agent_label") or "")
+        if not re.fullmatch(r"[a-f0-9]{64}", expected_sha) or expected_bytes < 20 or expected_bytes > 262144:
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρα στοιχεία ελέγχου.")
+
+        status2, data2 = broker_post(
+            "/msh/consume",
+            {
+                "msh_ticket": ticket,
+                "node_id": identity["node_id"],
+                "node_secret": identity["node_secret"],
+                "client_version": VERSION,
+                "architecture": ARCH,
+            },
+        )
+        ticket = None
+        if status2 != 200 or not data2.get("success") or data2.get("msh_delivery") is not True:
+            raise RuntimeError("Η ασφαλής λήψη ρυθμίσεων δεν ολοκληρώθηκε.")
+        if data2.get("agent_delivery") is not False or data2.get("execution") is not False or data2.get("remote_access") is not False:
+            raise RuntimeError("Η απάντηση παραβίασε το όριο ασφαλείας της τρέχουσας έκδοσης.")
+        msh = data2.get("msh")
+        if not isinstance(msh, dict) or msh.get("encoding") != "base64":
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρο αρχείο ρυθμίσεων.")
+        delivered_sha = str(msh.get("sha256") or "").lower()
+        delivered_bytes = int(msh.get("bytes") or 0)
+        delivered_label = str(msh.get("agent_label") or "")
+        if not secrets.compare_digest(delivered_sha, expected_sha) or delivered_bytes != expected_bytes or not secrets.compare_digest(delivered_label, agent_label):
+            raise RuntimeError("Τα στοιχεία του αρχείου άλλαξαν μεταξύ έγκρισης και λήψης.")
+        try:
+            raw = base64.b64decode(str(msh.get("data") or ""), validate=True)
+        except Exception as exc:
+            raise RuntimeError("Το αρχείο ρυθμίσεων δεν αποκωδικοποιήθηκε σωστά.") from exc
+        actual_sha = verify_msh_and_discard(raw, expected_sha, expected_bytes, agent_label)
+        checked_at = str(data2.get("consumed_at") or "")
+        with STATE_LOCK:
+            STATE["settings_status"] = "verified"
+            STATE["settings_checked_at"] = checked_at
+            STATE["settings_error"] = None
+            STATE["settings_sha_hint"] = actual_sha[:12]
+            STATE["settings_bytes"] = expected_bytes
+        print(f"[managed] Secure managed settings verified and discarded: bytes={expected_bytes}, sha256={actual_sha[:12]}...", flush=True)
+        return checked_at
+    except BrokerError as exc:
+        if exc.error_code == "sprsb_managed_node_revoked":
+            invalidate_local_identity(
+                "revoked",
+                "Η σύνδεση με το Smart Pro System έχει ανακληθεί. Απαιτείται νέος κωδικός pairing για επανασύνδεση.",
+            )
+        elif exc.error_code in ("sprsb_managed_node_auth_failed", "sprsb_managed_node_inactive"):
+            invalidate_local_identity(
+                "reauthorization_required",
+                "Η αποθηκευμένη σύνδεση δεν είναι πλέον έγκυρη. Απαιτείται νέος κωδικός pairing.",
+            )
+        else:
+            with STATE_LOCK:
+                STATE["settings_status"] = "error"
+                STATE["settings_error"] = str(exc)
+        raise RuntimeError(str(exc)) from exc
+    except RuntimeError as exc:
+        with STATE_LOCK:
+            STATE["settings_status"] = "error"
+            STATE["settings_error"] = str(exc)
+        raise
+
 def heartbeat_once():
     with STATE_LOCK:
         identity = STATE.get("identity")
@@ -369,6 +544,11 @@ def snapshot():
             "bootstrap_checked_at": STATE.get("bootstrap_checked_at"),
             "bootstrap_error": STATE.get("bootstrap_error"),
             "bootstrap_source_hint": STATE.get("bootstrap_source_hint"),
+            "settings_status": STATE.get("settings_status"),
+            "settings_checked_at": STATE.get("settings_checked_at"),
+            "settings_error": STATE.get("settings_error"),
+            "settings_sha_hint": STATE.get("settings_sha_hint"),
+            "settings_bytes": STATE.get("settings_bytes"),
         }
 
 
@@ -436,20 +616,20 @@ def render_page(message=None, error=None):
             status_text = "Γίνεται η πρώτη ασφαλής επιβεβαίωση της εγκατάστασης με το Smart Pro System."
         last_seen = esc(state.get("last_heartbeat") or "Αναμονή πρώτου heartbeat")
         error_html = f'<div class="inline-warning">{esc(state.get("last_error"))}</div>' if state.get("last_error") else ""
-        bootstrap_status = state.get("bootstrap_status") or "not_checked"
-        if bootstrap_status == "authorized":
-            bootstrap_label = "Επιβεβαιώθηκε"
-            bootstrap_detail = "Το one-time authorization εκδόθηκε και καταναλώθηκε χωρίς λήψη αρχείου .msh."
-        elif bootstrap_status == "error":
-            bootstrap_label = "Αποτυχία ελέγχου"
-            bootstrap_detail = esc(state.get("bootstrap_error") or "Ο έλεγχος δεν ολοκληρώθηκε.")
+        settings_status = state.get("settings_status") or "not_checked"
+        if settings_status == "verified":
+            settings_label = "Επιβεβαιώθηκε"
+            settings_detail = "Οι ασφαλείς ρυθμίσεις λήφθηκαν, ελέγχθηκαν και διαγράφηκαν αμέσως. Δεν ξεκίνησε απομακρυσμένη πρόσβαση."
+        elif settings_status == "error":
+            settings_label = "Αποτυχία ελέγχου"
+            settings_detail = esc(state.get("settings_error") or "Ο έλεγχος δεν ολοκληρώθηκε.")
         else:
-            bootstrap_label = "Δεν έχει ελεγχθεί"
-            bootstrap_detail = "Ο έλεγχος είναι authorization-only και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
+            settings_label = "Δεν έχει ελεγχθεί"
+            settings_detail = "Ο έλεγχος λαμβάνει προσωρινά μόνο τις απαραίτητες ρυθμίσεις, τις επαληθεύει και τις διαγράφει."
         bootstrap_form = f'''
             <div class="bootstrap-box">
-              <div><span>Ασφαλής προετοιμασία</span><strong>{esc(bootstrap_label)}</strong><p>{bootstrap_detail}</p></div>
-              <form method="post" action="bootstrap-check"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button class="secondary" type="submit">Έλεγχος ασφαλούς προετοιμασίας</button></form>
+              <div><span>Ασφαλής λήψη ρυθμίσεων</span><strong>{esc(settings_label)}</strong><p>{settings_detail}</p></div>
+              <form method="post" action="delivery-check"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button class="secondary" type="submit">Έλεγχος ασφαλούς λήψης ρυθμίσεων</button></form>
             </div>'''
         body = f'''
           <section class="card hero">
@@ -463,7 +643,7 @@ def render_page(message=None, error=None):
             </div>
             {error_html}
             {bootstrap_form}
-            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο one-time bootstrap authorization check. Δεν λαμβάνεται `.msh`, δεν κατεβαίνει/εκτελείται MeshAgent και δεν παρέχεται remote access.</div>
+            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο προσωρινή λήψη και επαλήθευση των ασφαλών ρυθμίσεων. Το αρχείο διαγράφεται αμέσως. Δεν κατεβαίνει/εκτελείται MeshAgent και δεν παρέχεται remote access.</div>
           </section>'''
     notices = ""
     if message:
@@ -541,13 +721,23 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError as exc:
                 self.send_html(render_page(error=str(exc)), 400)
             return
+        if path.endswith("/delivery-check") or path == "/delivery-check":
+            if not snapshot()["identity"]:
+                self.send_html(render_page(error="Η εγκατάσταση δεν είναι συνδεδεμένη."), 409)
+                return
+            try:
+                secure_settings_delivery_check()
+                self.send_html(render_page(message="Οι ασφαλείς ρυθμίσεις λήφθηκαν, επαληθεύτηκαν και διαγράφηκαν χωρίς ενεργοποίηση απομακρυσμένης πρόσβασης."))
+            except RuntimeError as exc:
+                self.send_html(render_page(error=str(exc)), 400)
+            return
         if path.endswith("/bootstrap-check") or path == "/bootstrap-check":
             if not snapshot()["identity"]:
                 self.send_html(render_page(error="Η εγκατάσταση δεν είναι συνδεδεμένη."), 409)
                 return
             try:
                 bootstrap_authorization_check()
-                self.send_html(render_page(message="Ο ασφαλής έλεγχος προετοιμασίας ολοκληρώθηκε χωρίς λήψη .msh ή ενεργοποίηση απομακρυσμένης πρόσβασης."))
+                self.send_html(render_page(message="Ο ασφαλής έλεγχος προετοιμασίας ολοκληρώθηκε."))
             except RuntimeError as exc:
                 self.send_html(render_page(error=str(exc)), 400)
             return

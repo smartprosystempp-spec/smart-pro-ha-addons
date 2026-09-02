@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
-description: "Managed Bootstrap Authorization Foundation. Η 2.1.0 προσθέτει ελεγχόμενο one-time bootstrap authorization check με Broker 0.17.0+. Δεν λαμβάνει .msh, δεν κατεβάζει/εκτελεί MeshAgent και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
-version: "2.1.0"
+description: "Managed Secure Settings Delivery Foundation. Η 2.2.0 λαμβάνει μόνο μία φορά το επαληθευμένο managed .msh μετά από ασφαλή προετοιμασία, το ελέγχει τοπικά και το διαγράφει αμέσως. Δεν κατεβάζει/εκτελεί MeshAgent και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
+version: "2.2.0"
 slug: "smart_pro_agent"
 arch:
   - aarch64

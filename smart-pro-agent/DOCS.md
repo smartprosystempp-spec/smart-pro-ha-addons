@@ -1,22 +1,22 @@
-# Smart Pro Managed Support 2.1.0 — QA Notes
+# Smart Pro Managed Support 2.2.0 — QA Notes
 
-## Preconditions
+## Προϋποθέσεις
 
-- Broker 0.17.0 installed.
-- Managed node remains ACTIVE and paired.
-- Managed enrollment source is READY.
-- Site/API reachable during QA.
+- Broker 0.18.0 εγκατεστημένο.
+- Managed node ACTIVE και ήδη paired.
+- Managed enrollment source READY.
+- Site/API προσβάσιμο κατά το QA.
 
-## Controlled test
+## Ελεγχόμενη δοκιμή
 
-1. Update 2.0.2 -> 2.1.0 without deleting the add-on or `/data`.
-2. Confirm the same installation remains paired and heartbeat resumes.
-3. Open Ingress.
-4. Press **Έλεγχος ασφαλούς προετοιμασίας** once.
-5. Expected UI: authorization confirmed, with explicit notice that no `.msh` was downloaded and no remote access was enabled.
-6. Refresh WordPress -> Managed Support.
-7. Expected: one new Managed Bootstrap Authorization row with status `CONSUMED`, matching ACTIVE node/installation/architecture.
+1. Update 2.1.0 -> 2.2.0 χωρίς διαγραφή add-on ή `/data`.
+2. Επιβεβαίωση ότι η ίδια εγκατάσταση παραμένει συνδεδεμένη και το heartbeat συνεχίζεται.
+3. Άνοιγμα Ingress.
+4. Πάτημα **«Έλεγχος ασφαλούς λήψης ρυθμίσεων»** μία φορά.
+5. Αναμενόμενο UI: οι ρυθμίσεις λήφθηκαν, επαληθεύτηκαν και διαγράφηκαν, χωρίς απομακρυσμένη πρόσβαση.
+6. WordPress -> Managed Support -> refresh.
+7. Αναμενόμενα: ένα νέο bootstrap authorization `CONSUMED` και ένα νέο settings-delivery ticket `CONSUMED` για το ίδιο ACTIVE node.
 
-## Stop checkpoint
+## Σημείο στάσης
 
-After the ticket is `CONSUMED`, stop for the day. Leave the managed node ACTIVE. Do not enable `.msh` delivery, MeshAgent delivery/execution or any remote runtime.
+Μετά το PASS σταματάμε. Δεν ενεργοποιούμε MeshAgent delivery/execution ή remote runtime στο ίδιο release.

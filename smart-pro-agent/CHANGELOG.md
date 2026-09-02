@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0 — Managed Secure Settings Delivery QA
+
+- Built directly from live-verified 2.1.0.
+- Requires Broker 0.18.0+ and READY Managed enrollment source.
+- Adds one customer action that first performs a fresh bootstrap authorization and then requests a 120-second one-time settings-delivery ticket.
+- Receives only the verified managed `.msh`; enrollment identifier is never received.
+- Verifies expected SHA-256, byte count, required Mesh fields, WSS and the opaque `SPMNG-*` managed node label.
+- Writes the `.msh` only to a restrictive temporary file for disk verification and deletes it immediately in a `finally` cleanup path.
+- Does not persist `.msh` in `/data`.
+- Does not download/chmod/execute MeshAgent and does not enable remote access.
+- Pairing, heartbeat, revoke/re-pair behavior remains unchanged.
+
 ## 2.1.0 — Managed Bootstrap Authorization QA
 
 - Built directly from live-verified 2.0.2 Revocation & Safe Re-pair UX.
