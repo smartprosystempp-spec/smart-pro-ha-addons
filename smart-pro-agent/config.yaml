@@ -1,6 +1,6 @@
 name: "Smart Pro System - Remote Support"
-description: "Managed Customer Consent Foundation. Η 2.4.0 εμφανίζει εγκεκριμένη συνεδρία Smart Pro Support και καταγράφει τη ρητή αποδοχή του πελάτη. Δεν εκτελεί πρόγραμμα σύνδεσης και δεν ενεργοποιεί απομακρυσμένη πρόσβαση."
-version: "2.4.0"
+description: "Managed Controlled Runtime. Η 2.5.0 επιτρέπει μόνο μία δοκιμαστική σύνδεση έως 60 δευτερόλεπτα μετά από έγκριση Smart Pro και ρητή ενέργεια πελάτη. Δεν εγκαθιστά υπηρεσία και δεν αφήνει μόνιμη πρόσβαση."
+version: "2.5.0"
 slug: "smart_pro_agent"
 arch:
   - aarch64

@@ -7,6 +7,8 @@ import os
 import re
 import secrets
 import ssl
+import subprocess
+import shutil
 import tempfile
 import threading
 import time
@@ -15,7 +17,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.4.0")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.5.0")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -48,6 +50,11 @@ STATE = {
     "agent_bytes": None,
     "support_session": None,
     "support_session_error": None,
+    "execution_status": "idle",
+    "execution_error": None,
+    "execution_started_at": None,
+    "execution_ended_at": None,
+    "execution_result": None,
 }
 
 
@@ -158,6 +165,11 @@ def invalidate_local_identity(status, message):
         STATE["agent_bytes"] = None
         STATE["support_session"] = None
         STATE["support_session_error"] = None
+        STATE["execution_status"] = "idle"
+        STATE["execution_error"] = None
+        STATE["execution_started_at"] = None
+        STATE["execution_ended_at"] = None
+        STATE["execution_result"] = None
     print(f"[managed] Local managed identity cleared: state={status}", flush=True)
 
 
@@ -258,6 +270,11 @@ def do_pair(code):
         STATE["agent_bytes"] = None
         STATE["support_session"] = None
         STATE["support_session_error"] = None
+        STATE["execution_status"] = "idle"
+        STATE["execution_error"] = None
+        STATE["execution_started_at"] = None
+        STATE["execution_ended_at"] = None
+        STATE["execution_result"] = None
     return identity
 
 
@@ -652,6 +669,240 @@ def secure_agent_delivery_check():
         raise
 
 
+def _verify_msh_bytes(raw, expected_sha, expected_bytes, expected_label):
+    if not isinstance(raw, (bytes, bytearray)) or len(raw) != int(expected_bytes):
+        raise RuntimeError("Το αρχείο ρυθμίσεων δεν έχει το εγκεκριμένο μέγεθος.")
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if not secrets.compare_digest(actual_sha, str(expected_sha).lower()):
+        raise RuntimeError("Το αρχείο ρυθμίσεων δεν πέρασε τον έλεγχο ακεραιότητας.")
+    parsed = parse_msh_bytes(raw)
+    for required in ("MeshName", "MeshType", "MeshID", "ServerID", "MeshServer"):
+        if not parsed.get(required):
+            raise RuntimeError("Το αρχείο ρυθμίσεων δεν περιέχει όλα τα απαιτούμενα πεδία.")
+    if not str(parsed.get("MeshServer") or "").lower().startswith("wss://"):
+        raise RuntimeError("Η διεύθυνση της υπηρεσίας σύνδεσης δεν είναι ασφαλής.")
+    if not re.fullmatch(r"SPMNG-[A-F0-9]{16}", expected_label or "") or not secrets.compare_digest(str(parsed.get("agentName") or ""), expected_label):
+        raise RuntimeError("Το αρχείο ρυθμίσεων δεν αντιστοιχεί σε αυτή την εγκατάσταση.")
+    return actual_sha
+
+
+def _verify_agent_bytes(raw, expected_sha, expected_bytes):
+    if len(raw) != int(expected_bytes):
+        raise RuntimeError("Το πρόγραμμα σύνδεσης δεν έχει το εγκεκριμένο μέγεθος.")
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if not secrets.compare_digest(actual_sha, str(expected_sha).lower()):
+        raise RuntimeError("Το πρόγραμμα σύνδεσης δεν πέρασε τον έλεγχο ακεραιότητας.")
+    if len(raw) < 64 or raw[:4] != b"\x7fELF" or raw[4] != 2 or raw[5] != 1:
+        raise RuntimeError("Το πρόγραμμα σύνδεσης δεν έχει την αναμενόμενη Linux 64-bit μορφή.")
+    machine = raw[18] | (raw[19] << 8)
+    expected_machine = 183 if ARCH == "aarch64" else 62 if ARCH == "amd64" else -1
+    if machine != expected_machine:
+        raise RuntimeError("Το πρόγραμμα σύνδεσης δεν αντιστοιχεί στην αρχιτεκτονική αυτής της εγκατάστασης.")
+    return actual_sha
+
+
+def _download_settings_for_runtime(identity):
+    bootstrap_authorization_check()
+    status, data = broker_post("/msh/request", {
+        "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+        "client_version": VERSION, "architecture": ARCH,
+    })
+    if status != 201 or not data.get("success") or data.get("msh_delivery_authorized") is not True:
+        raise RuntimeError("Δεν εγκρίθηκε η προσωρινή λήψη ρυθμίσεων.")
+    ticket = str(data.get("msh_ticket") or "")
+    expected_sha = str(data.get("expected_sha256") or "").lower()
+    expected_bytes = int(data.get("expected_bytes") or 0)
+    label = str(data.get("agent_label") or "")
+    if not re.fullmatch(r"SPMD-[A-Za-z0-9_-]{43}", ticket):
+        raise RuntimeError("Μη έγκυρη προσωρινή άδεια ρυθμίσεων.")
+    status2, data2 = broker_post("/msh/consume", {
+        "msh_ticket": ticket, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+        "client_version": VERSION, "architecture": ARCH,
+    })
+    if status2 != 200 or not data2.get("success"):
+        raise RuntimeError("Η προσωρινή λήψη ρυθμίσεων απέτυχε.")
+    msh = data2.get("msh") or {}
+    try:
+        raw = base64.b64decode(str(msh.get("data") or ""), validate=True)
+    except Exception as exc:
+        raise RuntimeError("Οι ρυθμίσεις δεν αποκωδικοποιήθηκαν σωστά.") from exc
+    delivered_sha = str(msh.get("sha256") or "").lower()
+    delivered_bytes = int(msh.get("bytes") or 0)
+    delivered_label = str(msh.get("agent_label") or "")
+    if not secrets.compare_digest(delivered_sha, expected_sha) or delivered_bytes != expected_bytes or not secrets.compare_digest(delivered_label, label):
+        raise RuntimeError("Οι ρυθμίσεις άλλαξαν μεταξύ έγκρισης και λήψης.")
+    _verify_msh_bytes(raw, expected_sha, expected_bytes, label)
+    return raw
+
+
+def _download_agent_for_runtime(identity):
+    status, data = broker_post("/agent/request", {
+        "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+        "client_version": VERSION, "architecture": ARCH,
+    })
+    if status != 201 or not data.get("success") or data.get("agent_delivery_authorized") is not True:
+        raise RuntimeError("Δεν εγκρίθηκε η προσωρινή λήψη του προγράμματος σύνδεσης.")
+    ticket = str(data.get("agent_ticket") or "")
+    expected_sha = str(data.get("expected_sha256") or "").lower()
+    expected_bytes = int(data.get("expected_bytes") or 0)
+    if not re.fullmatch(r"SPMA-[A-Za-z0-9_-]{43}", ticket):
+        raise RuntimeError("Μη έγκυρη προσωρινή άδεια προγράμματος.")
+    status2, content_type, headers, raw = broker_post_binary("/agent/consume", {
+        "agent_ticket": ticket, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+        "client_version": VERSION, "architecture": ARCH,
+    })
+    if status2 != 200 or content_type != "application/octet-stream":
+        raise RuntimeError("Η προσωρινή λήψη του προγράμματος σύνδεσης απέτυχε.")
+    header_sha = str(headers.get("X-Smart-Pro-Agent-SHA256") or headers.get("X-Smart-Pro-Agent-Sha256") or "").lower()
+    header_arch = str(headers.get("X-Smart-Pro-Agent-Architecture") or "").lower()
+    if header_sha and not secrets.compare_digest(header_sha, expected_sha):
+        raise RuntimeError("Το πρόγραμμα άλλαξε μεταξύ έγκρισης και λήψης.")
+    if header_arch and not secrets.compare_digest(header_arch, ARCH):
+        raise RuntimeError("Λήφθηκε πρόγραμμα διαφορετικής αρχιτεκτονικής.")
+    _verify_agent_bytes(raw, expected_sha, expected_bytes)
+    return raw
+
+
+def _report_execution(identity, report_token, result_code, elapsed_seconds):
+    try:
+        broker_post("/execution/report", {
+            "report_token": report_token, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+            "result_code": result_code, "elapsed_seconds": int(max(0, elapsed_seconds)),
+        }, timeout=10)
+    except Exception as exc:
+        print(f"[managed] Execution report failed: {type(exc).__name__}", flush=True)
+
+
+def controlled_session_run(session_ref):
+    with STATE_LOCK:
+        identity = dict(STATE.get("identity") or {})
+        STATE["execution_status"] = "starting"
+        STATE["execution_error"] = None
+        STATE["execution_started_at"] = None
+        STATE["execution_ended_at"] = None
+        STATE["execution_result"] = None
+    if not identity:
+        with STATE_LOCK:
+            STATE["execution_status"] = "error"
+            STATE["execution_error"] = "Η εγκατάσταση δεν είναι συνδεδεμένη."
+        return
+    report_token = None
+    proc = None
+    tempdir = None
+    started_monotonic = None
+    result_code = "launch_failed"
+    try:
+        status, data = broker_post("/execution/request", {
+            "session_ref": session_ref, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+            "client_version": VERSION, "architecture": ARCH,
+        })
+        if status != 201 or not data.get("success") or data.get("start_authorized") is not True:
+            raise RuntimeError("Η προσωρινή άδεια έναρξης δεν εκδόθηκε.")
+        if data.get("execution") is not False or data.get("remote_access") is not False or data.get("persistence") is not False:
+            raise RuntimeError("Η άδεια έναρξης δεν είναι στη σωστή ασφαλή κατάσταση.")
+        execution_ticket = str(data.get("execution_ticket") or "")
+        report_token = str(data.get("report_token") or "")
+        max_runtime = max(1, min(60, int(data.get("max_runtime_seconds") or 0)))
+        if not re.fullmatch(r"SPMX-[A-Za-z0-9_-]{43}", execution_ticket) or not re.fullmatch(r"SPMR-[A-Za-z0-9_-]{43}", report_token):
+            raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρη προσωρινή άδεια έναρξης.")
+
+        tempdir = tempfile.mkdtemp(prefix="smart_pro_managed_run_", dir="/tmp")
+        os.chmod(tempdir, 0o700)
+        msh_raw = _download_settings_for_runtime(identity)
+        agent_raw = _download_agent_for_runtime(identity)
+        msh_path = os.path.join(tempdir, "meshagent.msh")
+        agent_path = os.path.join(tempdir, "meshagent")
+        with open(msh_path, "wb") as handle:
+            handle.write(msh_raw); handle.flush(); os.fsync(handle.fileno())
+        os.chmod(msh_path, 0o600)
+        with open(agent_path, "wb") as handle:
+            handle.write(agent_raw); handle.flush(); os.fsync(handle.fileno())
+        os.chmod(agent_path, 0o700)
+        msh_raw = None; agent_raw = None
+
+        status2, data2 = broker_post("/execution/consume", {
+            "execution_ticket": execution_ticket, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+            "client_version": VERSION, "architecture": ARCH,
+        })
+        execution_ticket = None
+        if status2 != 200 or not data2.get("success") or data2.get("start_authorized") is not True:
+            raise RuntimeError("Η τελική άδεια έναρξης δεν επιβεβαιώθηκε.")
+        if data2.get("temporary_connect_only") is not True or data2.get("persistence") is not False:
+            raise RuntimeError("Η τελική άδεια δεν επιβεβαιώνει προσωρινή λειτουργία χωρίς εγκατάσταση.")
+        max_runtime = max(1, min(max_runtime, int(data2.get("max_runtime_seconds") or max_runtime)))
+        started_monotonic = time.monotonic()
+        with STATE_LOCK:
+            STATE["execution_status"] = "running"
+            STATE["execution_started_at"] = str(data2.get("started_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        proc = subprocess.Popen([agent_path, "-connect"], cwd=tempdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, close_fds=True)
+        result_code = "runtime_limit"
+        while True:
+            elapsed = int(time.monotonic() - started_monotonic)
+            if proc.poll() is not None:
+                result_code = "agent_exit"
+                break
+            if elapsed >= max_runtime:
+                result_code = "runtime_limit"
+                break
+            try:
+                _, watch = broker_post("/execution/watch", {
+                    "report_token": report_token, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
+                }, timeout=8)
+                if not watch.get("continue"):
+                    result_code = "session_ended"
+                    break
+            except Exception:
+                result_code = "stopped"
+                break
+            time.sleep(3)
+    except Exception as exc:
+        with STATE_LOCK:
+            STATE["execution_status"] = "error"
+            STATE["execution_error"] = str(exc)
+        result_code = "launch_failed"
+    finally:
+        elapsed = int(time.monotonic() - started_monotonic) if started_monotonic is not None else 0
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate(); proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill(); proc.wait(timeout=2)
+                except Exception:
+                    pass
+        if tempdir:
+            shutil.rmtree(tempdir, ignore_errors=True)
+        if report_token:
+            _report_execution(identity, report_token, result_code, elapsed)
+        with STATE_LOCK:
+            if STATE.get("execution_status") != "error":
+                STATE["execution_status"] = "finished"
+                STATE["execution_error"] = None
+            STATE["execution_ended_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            STATE["execution_result"] = result_code
+        try:
+            heartbeat_once()
+        except Exception:
+            pass
+        print(f"[managed] Controlled runtime finished: result={result_code}, seconds={elapsed}, persistence=false", flush=True)
+
+
+def start_controlled_session():
+    with STATE_LOCK:
+        identity = STATE.get("identity")
+        session = dict(STATE.get("support_session") or {})
+        execution_status = STATE.get("execution_status")
+    if not identity:
+        raise RuntimeError("Η εγκατάσταση δεν είναι συνδεδεμένη.")
+    if session.get("status") != "accepted" or not session.get("start_ready"):
+        raise RuntimeError("Η Smart Pro δεν έχει εγκρίνει ακόμη την έναρξη ή η έγκριση έληξε.")
+    if execution_status in ("starting", "running"):
+        raise RuntimeError("Η δοκιμαστική συνεδρία είναι ήδη σε εξέλιξη.")
+    session_ref = str(session.get("session_ref") or "")
+    threading.Thread(target=controlled_session_run, args=(session_ref,), name="smart-pro-controlled-runtime", daemon=True).start()
+    return True
+
+
 def accept_support_session():
     with STATE_LOCK:
         identity = STATE.get("identity")
@@ -721,13 +972,16 @@ def heartbeat_once():
                 raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρη κατάσταση συνεδρίας.")
             session_ref = str(session.get("session_ref") or "")
             session_status = str(session.get("status") or "")
-            if not re.fullmatch(r"SPSS-[A-F0-9]{24}", session_ref) or session_status not in ("authorized", "accepted"):
+            if not re.fullmatch(r"SPSS-[A-F0-9]{24}", session_ref) or session_status not in ("authorized", "accepted", "running"):
                 raise RuntimeError("Η υπηρεσία επέστρεψε μη έγκυρη συνεδρία υποστήριξης.")
             parsed_session = {
                 "session_ref": session_ref,
                 "status": session_status,
                 "expires_at": str(session.get("expires_at") or ""),
                 "accepted_at": str(session.get("accepted_at") or ""),
+                "start_ready": bool(session.get("start_ready")),
+                "start_ready_until": str(session.get("start_ready_until") or ""),
+                "runtime_active": bool(session.get("runtime_active")),
             }
         with STATE_LOCK:
             STATE["status"] = "ready"
@@ -794,6 +1048,11 @@ def snapshot():
             "agent_bytes": STATE.get("agent_bytes"),
             "support_session": dict(STATE.get("support_session")) if STATE.get("support_session") else None,
             "support_session_error": STATE.get("support_session_error"),
+            "execution_status": STATE.get("execution_status"),
+            "execution_error": STATE.get("execution_error"),
+            "execution_started_at": STATE.get("execution_started_at"),
+            "execution_ended_at": STATE.get("execution_ended_at"),
+            "execution_result": STATE.get("execution_result"),
         }
 
 
@@ -870,11 +1129,31 @@ def render_page(message=None, error=None):
               <form method="post" action="session-accept"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button type="submit">Αποδοχή συνεδρίας</button></form>
             </div>'''
         elif session and session.get("status") == "accepted":
-            support_status = "Η συνεδρία εγκρίθηκε από εσάς"
             accepted_at = esc(session.get("accepted_at") or "")
+            if state.get("execution_status") in ("starting", "running"):
+                support_status = "Η δοκιμαστική συνεδρία ξεκινά"
+                consent_box = f'''
+                <div class="bootstrap-box consent-box accepted">
+                  <div><span>Δοκιμαστική απομακρυσμένη συνεδρία</span><strong>Η σύνδεση είναι σε εξέλιξη</strong><p>Η πρόσβαση είναι προσωρινή, χωρίς εγκατάσταση υπηρεσίας, και θα τερματιστεί αυτόματα το αργότερο σε 60 δευτερόλεπτα.</p></div>
+                </div>'''
+            elif session.get("start_ready"):
+                support_status = "Έτοιμη για έναρξη"
+                consent_box = f'''
+                <div class="bootstrap-box consent-box accepted">
+                  <div><span>Εγκεκριμένη συνεδρία Smart Pro Support</span><strong>Η Smart Pro είναι έτοιμη να ξεκινήσει</strong><p>Η συναίνεσή σας έχει καταγραφεί{(" · " + accepted_at) if accepted_at else ""}. Πατώντας «Έναρξη συνεδρίας» επιτρέπετε μία δοκιμαστική σύνδεση έως 60 δευτερόλεπτα. Δεν εγκαθίσταται μόνιμη υπηρεσία.</p></div>
+                  <form method="post" action="session-start"><input type="hidden" name="csrf" value="{esc(CSRF_TOKEN)}"><button type="submit">Έναρξη συνεδρίας</button></form>
+                </div>'''
+            else:
+                support_status = "Η συνεδρία εγκρίθηκε από εσάς"
+                consent_box = f'''
+                <div class="bootstrap-box consent-box accepted">
+                  <div><span>Εγκεκριμένη συνεδρία Smart Pro Support</span><strong>Η αποδοχή καταγράφηκε</strong><p>Η συναίνεσή σας έχει καταγραφεί{(" · " + accepted_at) if accepted_at else ""}. Αναμένεται η τελική έγκριση έναρξης από τη Smart Pro.</p></div>
+                </div>'''
+        elif session and session.get("status") == "running":
+            support_status = "Η δοκιμαστική συνεδρία είναι ενεργή"
             consent_box = f'''
             <div class="bootstrap-box consent-box accepted">
-              <div><span>Εγκεκριμένη συνεδρία Smart Pro Support</span><strong>Η αποδοχή καταγράφηκε</strong><p>Η συναίνεσή σας έχει καταγραφεί{(" · " + accepted_at) if accepted_at else ""}. Το πρόγραμμα σύνδεσης δεν έχει ξεκινήσει ακόμη και δεν υπάρχει απομακρυσμένη πρόσβαση.</p></div>
+              <div><span>Δοκιμαστική απομακρυσμένη συνεδρία</span><strong>Προσωρινή σύνδεση σε εξέλιξη</strong><p>Η σύνδεση τερματίζεται αυτόματα και δεν εγκαθίσταται μόνιμη υπηρεσία.</p></div>
             </div>'''
         else:
             support_status = "Δεν υπάρχει ενεργή συνεδρία"
@@ -885,6 +1164,9 @@ def render_page(message=None, error=None):
         session_error = state.get("support_session_error")
         if session_error:
             consent_box += f'<div class="inline-warning">{esc(session_error)}</div>'
+        execution_error = state.get("execution_error")
+        if execution_error:
+            consent_box += f'<div class="inline-warning">{esc(execution_error)}</div>'
         body = f'''
           <section class="card hero">
             <div class="eyebrow">SMART PRO MANAGED SUPPORT</div>
@@ -897,7 +1179,7 @@ def render_page(message=None, error=None):
             </div>
             {error_html}
             {consent_box}
-            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Η εφαρμογή μπορεί να εμφανίσει μία εγκεκριμένη συνεδρία και να καταγράψει τη ρητή αποδοχή σας. Δεν εκτελεί ακόμη το πρόγραμμα σύνδεσης και δεν παρέχει απομακρυσμένη πρόσβαση.</div>
+            <div class="note"><strong>Τρέχον στάδιο {esc(VERSION)}:</strong> Επιτρέπεται μόνο μία ελεγχόμενη δοκιμαστική σύνδεση έως 60 δευτερόλεπτα, μετά από έγκριση Smart Pro και ρητή ενέργεια του πελάτη. Δεν γίνεται εγκατάσταση υπηρεσίας ή μόνιμη πρόσβαση.</div>
           </section>'''
     notices = ""
     if message:
@@ -982,6 +1264,16 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 accept_support_session()
                 self.send_html(render_page(message="Η συνεδρία εγκρίθηκε από εσάς. Δεν έχει ξεκινήσει ακόμη απομακρυσμένη πρόσβαση."))
+            except RuntimeError as exc:
+                self.send_html(render_page(error=str(exc)), 400)
+            return
+        if path.endswith("/session-start") or path == "/session-start":
+            if not snapshot()["identity"]:
+                self.send_html(render_page(error="Η εγκατάσταση δεν είναι συνδεδεμένη."), 409)
+                return
+            try:
+                start_controlled_session()
+                self.send_html(render_page(message="Η δοκιμαστική σύνδεση ξεκινά και θα τερματιστεί αυτόματα το αργότερο σε 60 δευτερόλεπτα."))
             except RuntimeError as exc:
                 self.send_html(render_page(error=str(exc)), 400)
             return
