@@ -1,8 +1,10 @@
-# Smart Pro Managed Support 2.5.1
+# Smart Pro Managed Support 2.5.2
 
-- Μικρό hotfix συμβατότητας της ελεγχόμενης δοκιμαστικής σύνδεσης.
-- Δεν αλλάζει pairing, heartbeat, συναίνεση πελάτη, έγκριση έναρξης, χρονικό όριο ή server contract.
-- Το `MeshAgent -connect` εκκινείται πλέον μέσα σε απομονωμένο pseudo-terminal (`script` από util-linux), όπως είχε απαιτηθεί και στην ήδη δοκιμασμένη Temporary ροή.
-- Δεν γίνεται `-install`, service persistence ή μόνιμη πρόσβαση.
-- Το `.msh` και το binary παραμένουν μόνο στον ιδιωτικό προσωρινό φάκελο και διαγράφονται στο τέλος.
-- Καμία αλλαγή στην Temporary 0.9.0 ή στον Broker 0.22.0.
+- Διορθώνει την πραγματική ελεγχόμενη εκκίνηση μετά τα live `agent_exit` 4–5s της 2.5.1.
+- Χρησιμοποιεί το ήδη live-verified μοντέλο της Temporary 0.7.6: foreground `./meshagent` χωρίς `-connect` και χωρίς `-install`.
+- Διατηρεί canonical προσωρινά ονόματα `meshagent` + `meshagent.msh`.
+- Σκληραίνει μόνο το προσωρινό runtime `.msh`: αφαιρεί force/fake update και core-dump flags και επιβάλλει `disableUpdate=1`, `noUpdateCoreModule=1`.
+- HOME/TMPDIR/XDG config/cache οδηγούνται μέσα στον ιδιωτικό προσωρινό φάκελο της συνεδρίας.
+- Η συνεδρία παραμένει one-time, απαιτεί έγκριση Smart Pro + αποδοχή πελάτη και έχει server runtime cap έως 60s.
+- Δεν γίνεται εγκατάσταση υπηρεσίας, persistence ή δεύτερη αυτόματη εκτέλεση.
+- Broker 0.22.1 παραμένει ως έχει. Temporary 0.9.0 δεν αλλάζει.

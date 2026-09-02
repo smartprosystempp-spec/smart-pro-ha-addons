@@ -1,7 +1,9 @@
-# Smart Pro System - Remote Support 2.5.1
+# Smart Pro System - Remote Support 2.5.2
 
-Controlled Runtime PTY Compatibility Hotfix.
+Η 2.5.2 είναι ελεγχόμενο compatibility update του Managed Support.
 
-Η 2.5.1 διατηρεί ακριβώς την ίδια ασφαλή ροή της 2.5.0, αλλά εκκινεί το προσωρινό `MeshAgent -connect` μέσα σε pseudo-terminal για να παραμένει ενεργό σε headless Home Assistant add-on περιβάλλον.
+Μετά από έγκριση Smart Pro και ρητή ενέργεια του πελάτη, το επαληθευμένο MeshAgent εκκινείται προσωρινά σε foreground λειτουργία από ιδιωτικό `/tmp` runtime με canonical `meshagent` + `meshagent.msh`. Δεν χρησιμοποιεί `-install`, δεν δημιουργεί υπηρεσία και δεν αφήνει μόνιμη πρόσβαση.
 
-Δεν εγκαθιστά υπηρεσία, δεν αφήνει μόνιμο agent και η δοκιμή τερματίζεται το αργότερο σε 60 δευτερόλεπτα.
+Το προσωρινό `.msh` σκληραίνει τοπικά ώστε να μην επιτρέπονται agent/core updates ή core dumps κατά τη δοκιμή. HOME/TMPDIR/XDG paths παραμένουν μέσα στον προσωρινό runtime φάκελο, ο οποίος διαγράφεται μετά τη λήξη.
+
+Το ανώτατο όριο runtime παραμένει 60 δευτερόλεπτα και ο Broker 0.22.1 παραμένει authoritative για έγκριση, watch και report.

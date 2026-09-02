@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = os.environ.get("SMART_PRO_VERSION", "2.5.1")
+VERSION = os.environ.get("SMART_PRO_VERSION", "2.5.2")
 ARCH = os.environ.get("SMART_PRO_ARCH", "").strip().lower()
 PORT = 8098
 OPTIONS_FILE = "/data/options.json"
@@ -686,6 +686,40 @@ def _verify_msh_bytes(raw, expected_sha, expected_bytes, expected_label):
     return actual_sha
 
 
+def _harden_msh_for_runtime(raw, expected_label):
+    """Create an ephemeral, locally hardened MeshAgent config after the broker copy is verified."""
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError("Οι ρυθμίσεις εκτέλεσης δεν είναι έγκυρο κείμενο.") from exc
+
+    blocked = {"forceupdate", "fakeupdate", "coredumpenabled", "disableupdate", "noupdatecoremodule"}
+    kept = []
+    for original in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = original.strip()
+        if not line:
+            continue
+        if "=" in line:
+            key = line.split("=", 1)[0].strip().lower()
+            if key in blocked:
+                continue
+        kept.append(line)
+    kept.extend(["disableUpdate=1", "noUpdateCoreModule=1"])
+    hardened = ("\n".join(kept) + "\n").encode("utf-8")
+
+    parsed = parse_msh_bytes(hardened)
+    for required in ("MeshName", "MeshType", "MeshID", "ServerID", "MeshServer"):
+        if not parsed.get(required):
+            raise RuntimeError("Οι ασφαλείς ρυθμίσεις εκτέλεσης έχασαν απαιτούμενο πεδίο.")
+    if not str(parsed.get("MeshServer") or "").lower().startswith("wss://"):
+        raise RuntimeError("Η διεύθυνση της υπηρεσίας σύνδεσης δεν είναι ασφαλής.")
+    if not secrets.compare_digest(str(parsed.get("agentName") or ""), str(expected_label or "")):
+        raise RuntimeError("Οι ασφαλείς ρυθμίσεις εκτέλεσης δεν αντιστοιχούν σε αυτή την εγκατάσταση.")
+    if str(parsed.get("disableUpdate") or "") != "1" or str(parsed.get("noUpdateCoreModule") or "") != "1":
+        raise RuntimeError("Δεν εφαρμόστηκε η τοπική πολιτική απενεργοποίησης ενημερώσεων.")
+    return hardened
+
+
 def _verify_agent_bytes(raw, expected_sha, expected_bytes):
     if len(raw) != int(expected_bytes):
         raise RuntimeError("Το πρόγραμμα σύνδεσης δεν έχει το εγκεκριμένο μέγεθος.")
@@ -812,13 +846,29 @@ def controlled_session_run(session_ref):
         agent_raw = _download_agent_for_runtime(identity)
         msh_path = os.path.join(tempdir, "meshagent.msh")
         agent_path = os.path.join(tempdir, "meshagent")
+        expected_label = str(parse_msh_bytes(msh_raw).get("agentName") or "")
+        runtime_msh = _harden_msh_for_runtime(msh_raw, expected_label)
         with open(msh_path, "wb") as handle:
-            handle.write(msh_raw); handle.flush(); os.fsync(handle.fileno())
+            handle.write(runtime_msh); handle.flush(); os.fsync(handle.fileno())
         os.chmod(msh_path, 0o600)
         with open(agent_path, "wb") as handle:
             handle.write(agent_raw); handle.flush(); os.fsync(handle.fileno())
         os.chmod(agent_path, 0o700)
-        msh_raw = None; agent_raw = None
+        msh_raw = None; runtime_msh = None; agent_raw = None
+
+        runtime_home = os.path.join(tempdir, "home")
+        runtime_tmp = os.path.join(tempdir, "tmp")
+        runtime_cfg = os.path.join(tempdir, "config")
+        runtime_cache = os.path.join(tempdir, "cache")
+        for private_dir in (runtime_home, runtime_tmp, runtime_cfg, runtime_cache):
+            os.mkdir(private_dir, 0o700)
+        runtime_env = os.environ.copy()
+        runtime_env.update({
+            "HOME": runtime_home,
+            "TMPDIR": runtime_tmp,
+            "XDG_CONFIG_HOME": runtime_cfg,
+            "XDG_CACHE_HOME": runtime_cache,
+        })
 
         status2, data2 = broker_post("/execution/consume", {
             "execution_ticket": execution_ticket, "node_id": identity["node_id"], "node_secret": identity["node_secret"],
@@ -834,12 +884,13 @@ def controlled_session_run(session_ref):
         with STATE_LOCK:
             STATE["execution_status"] = "running"
             STATE["execution_started_at"] = str(data2.get("started_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-        proc = subprocess.Popen(["script", "-q", "-e", "-c", "./meshagent -connect", "/dev/null"], cwd=tempdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, close_fds=True)
+        proc = subprocess.Popen(["setsid", "./meshagent"], cwd=tempdir, env=runtime_env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, close_fds=True)
         result_code = "runtime_limit"
         while True:
             elapsed = int(time.monotonic() - started_monotonic)
             if proc.poll() is not None:
                 result_code = "agent_exit"
+                print(f"[managed] MeshAgent foreground exited early: rc={proc.returncode}", flush=True)
                 break
             if elapsed >= max_runtime:
                 result_code = "runtime_limit"

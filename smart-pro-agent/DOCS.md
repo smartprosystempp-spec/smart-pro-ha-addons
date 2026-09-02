@@ -1,10 +1,12 @@
-# Managed Support 2.5.1 — QA checkpoint
+# Managed Support 2.5.2 — Live QA
 
-1. Broker παραμένει 0.22.0.
-2. Η εγκατάσταση πρέπει να είναι paired και ACTIVE.
-3. Δημιουργείται νέα δοκιμαστική συνεδρία, γίνεται αποδοχή πελάτη και πρόσφατη έγκριση έναρξης 60″.
-4. Ο πελάτης πατά μία φορά «Έναρξη συνεδρίας».
-5. Αναμένεται το managed node να εμφανιστεί προσωρινά στο MeshCentral.
-6. Η δοκιμή σταματά αυτόματα <=60s.
-7. Στο WordPress αναμένεται REPORT με αποτέλεσμα runtime_limit ή session_ended, όχι άμεσο agent_exit.
-8. Μετά το τέλος δεν πρέπει να παραμένει `meshagent`, `.msh` ή service persistence.
+1. Broker: 0.22.1. Home Assistant: update 2.5.1 → 2.5.2.
+2. Δημιουργία νέας δοκιμαστικής συνεδρίας 30′.
+3. Αποδοχή από Home Assistant.
+4. WordPress: «Έγκριση έναρξης 60″».
+5. Home Assistant refresh → «Έναρξη συνεδρίας» μία φορά.
+6. Μόνο visual check στο MeshCentral group — όχι Desktop/Terminal/Files ακόμη.
+7. Αναμενόμενο: managed node εμφανίζεται προσωρινά και παραμένει online μέχρι τον ελεγχόμενο τερματισμό.
+8. Μετά τη λήξη: WordPress execution report + τελευταίες γραμμές log.
+
+Security boundary: no install/service persistence, no automatic second run, no permanent access.
