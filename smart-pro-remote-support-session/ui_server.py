@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.5"
+VERSION = "0.9.6"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.5.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.6.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -107,6 +107,21 @@ def get_flow_snapshot(flow_id):
     with STATE_LOCK:
         f=FLOWS.get(flow_id)
         return None if not f else {k:v for k,v in f.items() if k!="code"}
+
+def get_active_flow_snapshot():
+    """Return the current running UI flow without requiring a browser query token.
+
+    This is intentionally limited to the in-memory ACTIVE_FLOW already owned by this
+    add-on process. It never restores or reuses the one-time support code and never
+    starts a new execution.
+    """
+    clean_flows()
+    with STATE_LOCK:
+        flow_id=ACTIVE_FLOW
+        f=FLOWS.get(flow_id) if flow_id else None
+        if not f or f.get("state") != "running":
+            return None,None
+        return flow_id,{k:v for k,v in f.items() if k!="code"}
 
 def run_phase_f(flow_id, code):
     global ACTIVE_FLOW, ACTIVE_PROCESS
@@ -204,7 +219,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.allowed_source(): self.respond(b"Forbidden",403); return
         flow_id=(parse_qs(urlparse(self.path).query).get('flow') or [''])[0]
-        self.respond(status_page(flow_id,get_flow_snapshot(flow_id)) if flow_id else entry_page())
+        if flow_id:
+            self.respond(status_page(flow_id,get_flow_snapshot(flow_id))); return
+        active_flow_id,active_flow=get_active_flow_snapshot()
+        if active_flow_id and active_flow:
+            self.respond(status_page(active_flow_id,active_flow)); return
+        self.respond(entry_page())
     def do_POST(self):
         if not self.allowed_source(): self.respond(b"Forbidden",403); return
         try: length=int(self.headers.get("Content-Length","0"))

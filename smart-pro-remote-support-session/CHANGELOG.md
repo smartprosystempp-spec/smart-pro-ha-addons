@@ -1,3 +1,13 @@
+# 0.9.6 — Ingress Active-State Restoration Hotfix
+
+- Built directly from live-verified Temporary 0.9.5 Watch Transport Grace Hotfix.
+- Fixes the Home Assistant Ingress refresh/return behavior while a Phase F session is already running.
+- A root GET without a browser `flow` query now restores only the current in-memory `ACTIVE_FLOW` when its state is `running`.
+- No support code is restored, persisted, revalidated or reused.
+- Refresh does not issue a new Broker validation, Phase E/F ticket, MeshAgent execution or reconnect.
+- Completed/failed sessions are not auto-restored from root; the existing explicit flow URL behavior remains unchanged.
+- Broker 0.25.1 remains unchanged. Watch transport grace, dynamic server-authoritative runtime, courtesy extension, one-shot guard, no-install policy, cleanup and node lifecycle are unchanged.
+
 # 0.9.5 — Watch Transport Grace Hotfix
 
 - Live 0.9.4 finding: a production watch curl timeout still ended a paid session with `watch_failed` after several minutes.

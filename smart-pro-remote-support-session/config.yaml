@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support"
-description: "Live Extension Watch Transport Grace Hotfix. Η 0.9.5 διατηρεί τα πληρωμένα 30/60/90 με 60s startup allowance και επιτρέπει μόνο server-authoritative παράταση που έχει εγκριθεί από τον πελάτη. Η ίδια MeshAgent execution συνεχίζει χωρίς reconnect, με δυναμικό local fail-safe deadline και χωρίς persistence."
-version: "0.9.5"
+description: "Ingress Active-State Restoration Hotfix. Η 0.9.6 διατηρεί τα πληρωμένα 30/60/90 με 60s startup allowance και επιτρέπει μόνο server-authoritative παράταση που έχει εγκριθεί από τον πελάτη. Η ίδια MeshAgent execution συνεχίζει χωρίς reconnect, με δυναμικό local fail-safe deadline και χωρίς persistence."
+version: "0.9.6"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

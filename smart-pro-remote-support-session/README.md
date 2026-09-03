@@ -1,6 +1,11 @@
-# Smart Pro Remote Support — Customer Start & Controlled Execution Bridge 0.9.0
+# Smart Pro Remote Support — Guest Runtime 0.9.6
 
-Version 0.9.0 connects the customer-facing Home Assistant Ingress UI to the previously live-verified controlled Phase F execution chain.
+Version 0.9.6 keeps the live-verified Guest Phase F runtime and restores the active Ingress status page after a normal browser refresh/return while the same execution is still running.
+
+## Ingress refresh behavior
+- During an active execution, opening/refreshing the Ingress root restores only the current in-memory running UI flow.
+- It does not recover the support code, repeat validation, request new Phase E/F authorization, or execute MeshAgent again.
+- If no execution is active, the normal code-entry page is shown.
 
 ## Security model
 - Code validation happens first without requesting bootstrap material.

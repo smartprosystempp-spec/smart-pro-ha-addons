@@ -1,3 +1,7 @@
+# 0.9.6 Ingress Active-State Restoration
+
+While the Phase F child is running, the Home Assistant Ingress UI may be re-opened or manually refreshed at the root path. 0.9.6 resolves that root request to the existing in-memory `ACTIVE_FLOW` only when it is still `running`, so the customer sees the active-session screen again. No one-time support code is restored or reused, and no new Broker validation, authorization, MeshAgent process or reconnect occurs.
+
 ## Watch transport grace hotfix 0.9.5
 
 A transport-only failure of the execution watch no longer kills a healthy paid session after one 10-second curl stall. The client remembers the time of the last valid Broker watch and permits retry attempts only while less than 30 seconds have elapsed since that valid response. The existing local hard deadline remains authoritative and is never increased during this degraded period.
