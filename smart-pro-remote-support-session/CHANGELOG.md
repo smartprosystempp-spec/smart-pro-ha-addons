@@ -1,4 +1,13 @@
-# 0.9.3 — Live Extension Consent Runtime
+# 0.9.4 — Watch Transport Retry Hotfix
+
+- Built directly from Temporary 0.9.3 Live Extension Consent Runtime.
+- A single curl transport failure/timeout on the execution watch no longer immediately ends the session with `watch_failed`.
+- Exactly one bounded retry is allowed after 2 seconds, using the same 5s connect / 10s total curl limits.
+- Only transport-level curl failure is retryable. HTTP rejection, malformed JSON, runtime decrease, invalid runtime or 8-hour cap violation remain immediately fail-closed.
+- The independent local hard-deadline guard remains authoritative during the retry; no extension is inferred locally and no runtime is added without a valid server response.
+- Same MeshAgent process, no reconnect, no second execution, no `-install`, and normal cleanup/report behavior remain unchanged.
+
+# 0.9.4 — Live Extension Consent Runtime
 
 - Dynamic server-authoritative runtime ceiling can increase only after Broker-approved customer extension consent.
 - Same foreground MeshAgent process continues; no reconnect/reinstall.

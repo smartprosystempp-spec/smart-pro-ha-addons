@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support"
-description: "Live Extension Consent Runtime. Η 0.9.3 διατηρεί τα πληρωμένα 30/60/90 με 60s startup allowance και επιτρέπει μόνο server-authoritative παράταση που έχει εγκριθεί από τον πελάτη. Η ίδια MeshAgent execution συνεχίζει χωρίς reconnect, με δυναμικό local fail-safe deadline και χωρίς persistence."
-version: "0.9.3"
+description: "Live Extension Watch Retry Hotfix. Η 0.9.4 διατηρεί τα πληρωμένα 30/60/90 με 60s startup allowance και επιτρέπει μόνο server-authoritative παράταση που έχει εγκριθεί από τον πελάτη. Η ίδια MeshAgent execution συνεχίζει χωρίς reconnect, με δυναμικό local fail-safe deadline και χωρίς persistence."
+version: "0.9.4"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

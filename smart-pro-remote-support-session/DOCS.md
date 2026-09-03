@@ -1,4 +1,8 @@
-## Runtime extension 0.9.3
+## Watch transport hotfix 0.9.4
+
+One transient watch transport failure is retried exactly once after 2 seconds. The retry does not grant time: the existing local deadline remains unchanged until a valid Broker HTTP 200 JSON response supplies a non-decreasing `max_runtime_seconds`. A second transport failure, any HTTP rejection, malformed JSON, runtime decrease or safety-cap violation remains fail-closed.
+
+## Runtime extension 0.9.4
 
 When a paid Guest session is already running, the Broker may increase max_runtime_seconds only after an explicit customer-approved extension. The client accepts only non-decreasing values within the local absolute safety cap and updates the same running process deadline without reconnect.
 

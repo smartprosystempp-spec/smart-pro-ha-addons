@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.3"
+VERSION = "0.9.4"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.3.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.4.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
