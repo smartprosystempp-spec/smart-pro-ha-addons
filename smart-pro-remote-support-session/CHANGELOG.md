@@ -1,3 +1,14 @@
+# 0.9.5 — Watch Transport Grace Hotfix
+
+- Live 0.9.4 finding: a production watch curl timeout still ended a paid session with `watch_failed` after several minutes.
+- Replaces the single immediate retry model with a bounded 30-second transport grace measured from the last valid HTTP 200 + JSON watch response.
+- During transport degradation the current server-authoritative runtime is frozen; the client never infers or grants an extension locally.
+- Watch retries occur after 2 seconds while still inside the bounded grace.
+- If no valid server watch is restored within the grace, execution remains fail-closed with `watch_failed`.
+- HTTP non-200, malformed JSON, runtime decrease, invalid runtime and absolute-cap violation remain immediately fail-closed and do not receive transport grace.
+- Adds explicit DEGRADED / RECOVERED / FAIL-CLOSED log markers for live diagnosis.
+- Broker 0.25.0, consent/extension DB contract, one-shot guard, single foreground MeshAgent execution, no-install policy, dynamic deadline and cleanup remain unchanged.
+
 # 0.9.4 — Watch Transport Retry Hotfix
 
 - Built directly from Temporary 0.9.3 Live Extension Consent Runtime.

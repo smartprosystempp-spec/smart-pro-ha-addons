@@ -1,3 +1,11 @@
+## Watch transport grace hotfix 0.9.5
+
+A transport-only failure of the execution watch no longer kills a healthy paid session after one 10-second curl stall. The client remembers the time of the last valid Broker watch and permits retry attempts only while less than 30 seconds have elapsed since that valid response. The existing local hard deadline remains authoritative and is never increased during this degraded period.
+
+Only curl transport errors receive the bounded grace. HTTP rejection, malformed JSON, a decreasing/invalid runtime, or a runtime above the local 8-hour safety cap still fail closed immediately. If connectivity does not recover within the grace, the session terminates with `watch_failed`.
+
+Live logs expose `WATCH TRANSPORT DEGRADED`, `WATCH TRANSPORT RECOVERED`, and `WATCH TRANSPORT FAIL-CLOSED` so the exact path is visible during QA.
+
 ## Watch transport hotfix 0.9.4
 
 One transient watch transport failure is retried exactly once after 2 seconds. The retry does not grant time: the existing local deadline remains unchanged until a valid Broker HTTP 200 JSON response supplies a non-decreasing `max_runtime_seconds`. A second transport failure, any HTTP rejection, malformed JSON, runtime decrease or safety-cap violation remains fail-closed.
