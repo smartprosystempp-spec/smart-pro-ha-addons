@@ -1,3 +1,11 @@
+# 0.9.1 — Session Duration Contract Foundation
+
+- Διαβάζει μόνο το non-secret `support_contract` από τον Broker validation response.
+- Εμφανίζει 30/60/90 λεπτά μόνο όταν η διάρκεια προέρχεται από πραγματικό paid Guest Support Case.
+- Οι χειροκίνητες QA συνεδρίες εμφανίζονται ξεκάθαρα ως QA χωρίς εμπορική διάρκεια.
+- Δεν αλλάζει ακόμη ο Phase F runtime: παραμένει hard-limited στα 60s.
+- Δεν αλλάζουν one-shot guard, E/F authorization, MeshAgent invocation, watcher/revoke, cleanup ή no-persistence πολιτική.
+
 # Changelog
 
 ## 0.9.0

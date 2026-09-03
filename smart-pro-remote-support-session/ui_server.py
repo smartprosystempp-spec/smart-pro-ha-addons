@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.0.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.1.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -44,7 +44,7 @@ def normalize_code(raw):
 def broker_validate(code):
     broker_url = load_broker_url()
     if not broker_url:
-        return False, "configuration", "Η ασφαλής υπηρεσία επικύρωσης δεν είναι διαθέσιμη."
+        return False, "configuration", "Η ασφαλής υπηρεσία επικύρωσης δεν είναι διαθέσιμη.", None
     payload = json.dumps({"code": code,"client": "home_assistant_os","client_version": VERSION,"request_bootstrap_ticket": False}).encode("utf-8")
     req = urllib.request.Request(broker_url,data=payload,method="POST",headers={"Content-Type":"application/json","User-Agent":f"SmartProRemoteSupport/{VERSION}","Cache-Control":"no-store"})
     try:
@@ -53,13 +53,30 @@ def broker_validate(code):
     except urllib.error.HTTPError as exc:
         status=int(exc.code); body=exc.read(128*1024)
     except Exception:
-        return False,"network","Δεν ήταν δυνατή η ασφαλής επικοινωνία με το Smart Pro System."
+        return False,"network","Δεν ήταν δυνατή η ασφαλής επικοινωνία με το Smart Pro System.",None
     try: data=json.loads(body.decode("utf-8"))
-    except Exception: return False,"unexpected","Η υπηρεσία επέστρεψε μη αναμενόμενη απάντηση."
-    if status==200 and data.get("valid") is True: return True,"valid","Ο κωδικός είναι έγκυρος και η συνεδρία είναι έτοιμη."
+    except Exception: return False,"unexpected","Η υπηρεσία επέστρεψε μη αναμενόμενη απάντηση.",None
+    if status==200 and data.get("valid") is True:
+        raw_contract=data.get("support_contract") if isinstance(data,dict) else None
+        contract={"kind":"unknown","duration_minutes":0,"duration_source":"none","production_runtime_enabled":False,"qa_runtime_seconds":60}
+        if isinstance(raw_contract,dict):
+            try: duration=int(raw_contract.get("duration_minutes") or 0)
+            except Exception: duration=0
+            try: qa_seconds=int(raw_contract.get("qa_runtime_seconds") or 60)
+            except Exception: qa_seconds=60
+            if duration not in (0,30,60,90): duration=0
+            if qa_seconds != 60: qa_seconds=60
+            contract={
+                "kind":str(raw_contract.get("kind") or "unknown")[:40],
+                "duration_minutes":duration,
+                "duration_source":str(raw_contract.get("duration_source") or "none")[:40],
+                "production_runtime_enabled":bool(raw_contract.get("production_runtime_enabled") is True),
+                "qa_runtime_seconds":qa_seconds,
+            }
+        return True,"valid","Ο κωδικός είναι έγκυρος και η συνεδρία είναι έτοιμη.",contract
     reason=str((data.get("data") or {}).get("reason") or data.get("reason") or "unknown") if isinstance(data,dict) else "unknown"
     messages={"invalid":"Ο κωδικός δεν είναι έγκυρος. Ελέγξτε τον και δοκιμάστε ξανά.","revoked":"Ο κωδικός έχει ανακληθεί και δεν μπορεί να χρησιμοποιηθεί.","expired":"Ο κωδικός έχει λήξει. Χρειάζεται νέος κωδικός υποστήριξης.","inactive":"Η συγκεκριμένη συνεδρία δεν είναι διαθέσιμη.","rate_limited":"Έγιναν πολλές προσπάθειες. Περιμένετε λίγο πριν δοκιμάσετε ξανά."}
-    return False,reason,messages.get(reason,"Ο κωδικός δεν έγινε αποδεκτός από την ασφαλή υπηρεσία.")
+    return False,reason,messages.get(reason,"Ο κωδικός δεν έγινε αποδεκτός από την ασφαλή υπηρεσία."),None
 
 def clean_flows():
     now=time.time()
@@ -68,9 +85,10 @@ def clean_flows():
         for fid in stale:
             FLOWS[fid]["code"]=""; del FLOWS[fid]
 
-def new_validated_flow(code):
+def new_validated_flow(code,contract=None):
     clean_flows(); flow_id=secrets.token_urlsafe(32)
-    with STATE_LOCK: FLOWS[flow_id]={"state":"validated","code":code,"created":time.time(),"message":"Ο κωδικός επιβεβαιώθηκε."}
+    safe_contract=contract if isinstance(contract,dict) else {"kind":"unknown","duration_minutes":0,"duration_source":"none","production_runtime_enabled":False,"qa_runtime_seconds":60}
+    with STATE_LOCK: FLOWS[flow_id]={"state":"validated","code":code,"created":time.time(),"message":"Ο κωδικός επιβεβαιώθηκε.","support_contract":safe_contract}
     return flow_id
 
 def get_flow_snapshot(flow_id):
@@ -128,7 +146,7 @@ def styles():
 
 def wrap(content,refresh=None):
     refresh_tag=f'<meta http-equiv="refresh" content="3;url=?flow={html.escape(refresh)}">' if refresh else ''
-    return f'''<!doctype html><html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">{refresh_tag}<title>Smart Pro Remote Support</title>{styles()}</head><body><main class="shell"><div class="eyebrow">SMART PRO REMOTE SUPPORT</div><h1>Προσωρινή τεχνική υποστήριξη</h1>{content}<div class="version">Customer Start & Controlled Execution Bridge · v{VERSION}</div></main></body></html>'''.encode("utf-8")
+    return f'''<!doctype html><html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">{refresh_tag}<title>Smart Pro Remote Support</title>{styles()}</head><body><main class="shell"><div class="eyebrow">SMART PRO REMOTE SUPPORT</div><h1>Προσωρινή τεχνική υποστήριξη</h1>{content}<div class="version">Session Duration Contract Foundation · v{VERSION}</div></main></body></html>'''.encode("utf-8")
 
 def entry_page(status=None,message=None):
     notice=f'<div class="notice error"><strong>Δεν ολοκληρώθηκε η επιβεβαίωση.</strong><span>{html.escape(message or "")}</span></div>' if status=='error' else ''
@@ -136,7 +154,16 @@ def entry_page(status=None,message=None):
     return wrap(content)
 
 def validated_page(flow_id):
-    content=f'''<p class="lead">Ο κωδικός επιβεβαιώθηκε και η συνεδρία είναι έτοιμη.</p><div class="notice success"><strong>Ο κωδικός επιβεβαιώθηκε.</strong><span>Η απομακρυσμένη πρόσβαση δεν έχει ξεκινήσει ακόμη.</span></div><div class="ready"><span class="dot"></span><div><strong>Έτοιμο για ασφαλή σύνδεση</strong><p>Με το επόμενο κουμπί ξεκινά μία προσωρινή, ελεγχόμενη συνεδρία. Μπορεί να χρειαστούν μερικά δευτερόλεπτα μέχρι να εμφανιστεί στον τεχνικό.</p></div></div><section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν γίνεται εγκατάσταση service. Η συνεδρία είναι one-time, ελέγχεται από Broker/watchdog και τερματίζεται υποχρεωτικά μέσα στο καθορισμένο όριο.</p>'''
+    flow=get_flow_snapshot(flow_id) or {}
+    contract=flow.get("support_contract") if isinstance(flow.get("support_contract"),dict) else {}
+    raw_duration=contract.get("duration_minutes") or 0
+    try: duration=int(raw_duration)
+    except Exception: duration=0
+    if duration in (30,60,90):
+        duration_block=f'<div class="notice success"><strong>Πακέτο υποστήριξης: {duration} λεπτά</strong><span>Η αγορασμένη διάρκεια αναγνωρίστηκε από την πληρωμένη συνεδρία. Σε αυτή την έκδοση QA ο πραγματικός χρόνος σύνδεσης παραμένει ακόμη κλειδωμένος στα 60 δευτερόλεπτα.</span></div>'
+    else:
+        duration_block='<div class="notice warn"><strong>Χειροκίνητη δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη εμπορική διάρκεια 30/60/90. Η τρέχουσα δοκιμή παραμένει στο ασφαλές όριο των 60 δευτερολέπτων.</span></div>'
+    content=f'''<p class="lead">Ο κωδικός επιβεβαιώθηκε και η συνεδρία είναι έτοιμη.</p><div class="notice success"><strong>Ο κωδικός επιβεβαιώθηκε.</strong><span>Η απομακρυσμένη πρόσβαση δεν έχει ξεκινήσει ακόμη.</span></div>{duration_block}<div class="ready"><span class="dot"></span><div><strong>Έτοιμο για ασφαλή σύνδεση</strong><p>Με το επόμενο κουμπί ξεκινά μία προσωρινή, ελεγχόμενη συνεδρία. Μπορεί να χρειαστούν μερικά δευτερόλεπτα μέχρι να εμφανιστεί στον τεχνικό.</p></div></div><section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν γίνεται εγκατάσταση service. Η συνεδρία είναι one-time, ελέγχεται από Broker/watchdog και τερματίζεται υποχρεωτικά μέσα στο καθορισμένο όριο.</p>'''
     return wrap(content)
 
 def status_page(flow_id,flow):
@@ -175,9 +202,9 @@ class Handler(BaseHTTPRequestHandler):
         if action=='validate':
             code=normalize_code((form.get('support_code') or [''])[0])
             if not CODE_RE.fullmatch(code): self.respond(entry_page('error','Ο κωδικός πρέπει να έχει μορφή SP-XXXX-XXXX.'),400); return
-            ok,reason,message=broker_validate(code)
+            ok,reason,message,contract=broker_validate(code)
             if ok:
-                flow_id=new_validated_flow(code); code=""
+                flow_id=new_validated_flow(code,contract); code=""
                 print("CUSTOMER UI: προσωρινός κωδικός επικυρώθηκε — κρατείται μόνο σε βραχύβια μνήμη μέχρι ρητό Start.",flush=True)
                 self.respond(validated_page(flow_id)); return
             code=""; print(f"CUSTOMER UI: validation απορρίφθηκε με ασφαλή κατηγορία={reason} — χωρίς καταγραφή code.",flush=True); self.respond(entry_page('error',message)); return
