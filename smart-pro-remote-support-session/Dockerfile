@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim
 
-ARG BUILD_VERSION="0.9.1"
+ARG BUILD_VERSION="0.9.2"
 ARG BUILD_ARCH
 
 RUN apt-get update \
@@ -15,8 +15,8 @@ RUN apt-get update \
 
 COPY run.sh /
 COPY ui_server.py /opt/smart-pro/ui_server.py
-COPY phase-f-ui-0.9.1.sh /opt/smart-pro/phase-f-ui-0.9.1.sh
-RUN chmod a+x /run.sh /opt/smart-pro/ui_server.py /opt/smart-pro/phase-f-ui-0.9.1.sh
+COPY phase-f-ui-0.9.2.sh /opt/smart-pro/phase-f-ui-0.9.2.sh
+RUN chmod a+x /run.sh /opt/smart-pro/ui_server.py /opt/smart-pro/phase-f-ui-0.9.2.sh
 
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \

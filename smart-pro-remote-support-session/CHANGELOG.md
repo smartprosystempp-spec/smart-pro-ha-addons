@@ -1,3 +1,10 @@
+# 0.9.2 — Production Session Runtime Foundation
+
+- Paid Guest 30/60/90 sessions now accept only the exact Broker runtime policies 1860/3660/5460 seconds (purchased time + fixed 60s startup allowance).
+- Manual QA remains exactly 60 seconds.
+- Admin stop requests are recognized via watchdog and complete with normal cleanup/report instead of a fail-closed error.
+- Same foreground/no-arguments MeshAgent invocation, no install/service persistence, one-shot authorization, SHA/ELF validation and cleanup.
+
 # 0.9.1 — Session Duration Contract Foundation
 
 - Διαβάζει μόνο το non-secret `support_contract` από τον Broker validation response.

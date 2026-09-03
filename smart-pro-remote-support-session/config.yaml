@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support"
-description: "Session Duration Contract Foundation. Η 0.9.1 αναγνωρίζει με ασφαλή τρόπο την πραγματική αγορασμένη διάρκεια 30/60/90 λεπτών από τον Broker, χωρίς να αλλάζει ακόμη τον αποδεδειγμένο Phase F runtime των 60s. Ο κωδικός παραμένει μόνο προσωρινά στη μνήμη και η εκτέλεση παραμένει one-shot, fail-closed και χωρίς persistence."
-version: "0.9.1"
+description: "Production Session Runtime Foundation. Η 0.9.2 ενεργοποιεί server-authoritative runtime για πληρωμένα πακέτα 30/60/90 λεπτών με 60s επιπλέον startup allowance, ενώ οι manual QA συνεδρίες μένουν στα 60s. Ο κωδικός παραμένει μόνο προσωρινά στη μνήμη και η εκτέλεση παραμένει one-shot, fail-closed και χωρίς persistence."
+version: "0.9.2"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64

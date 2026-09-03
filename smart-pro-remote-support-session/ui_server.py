@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.1"
+VERSION = "0.9.2"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.1.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.2.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -58,20 +58,31 @@ def broker_validate(code):
     except Exception: return False,"unexpected","Η υπηρεσία επέστρεψε μη αναμενόμενη απάντηση.",None
     if status==200 and data.get("valid") is True:
         raw_contract=data.get("support_contract") if isinstance(data,dict) else None
-        contract={"kind":"unknown","duration_minutes":0,"duration_source":"none","production_runtime_enabled":False,"qa_runtime_seconds":60}
+        contract={"kind":"unknown","duration_minutes":0,"duration_source":"none","production_runtime_enabled":False,"qa_runtime_seconds":60,"startup_grace_seconds":0,"max_runtime_seconds":60}
         if isinstance(raw_contract,dict):
             try: duration=int(raw_contract.get("duration_minutes") or 0)
             except Exception: duration=0
             try: qa_seconds=int(raw_contract.get("qa_runtime_seconds") or 60)
             except Exception: qa_seconds=60
+            try: startup_grace=int(raw_contract.get("startup_grace_seconds") or 0)
+            except Exception: startup_grace=0
+            try: max_runtime=int(raw_contract.get("max_runtime_seconds") or 60)
+            except Exception: max_runtime=60
+            production=bool(raw_contract.get("production_runtime_enabled") is True)
             if duration not in (0,30,60,90): duration=0
             if qa_seconds != 60: qa_seconds=60
+            expected_max=(duration*60+60) if production and duration in (30,60,90) else 60
+            if production and startup_grace != 60: production=False
+            if max_runtime != expected_max: production=False; max_runtime=60; startup_grace=0
+            if not production: duration=0 if str(raw_contract.get("duration_source") or "none") != "paid_guest_case" else duration
             contract={
                 "kind":str(raw_contract.get("kind") or "unknown")[:40],
                 "duration_minutes":duration,
                 "duration_source":str(raw_contract.get("duration_source") or "none")[:40],
-                "production_runtime_enabled":bool(raw_contract.get("production_runtime_enabled") is True),
+                "production_runtime_enabled":production,
                 "qa_runtime_seconds":qa_seconds,
+                "startup_grace_seconds":startup_grace if production else 0,
+                "max_runtime_seconds":max_runtime if production else 60,
             }
         return True,"valid","Ο κωδικός είναι έγκυρος και η συνεδρία είναι έτοιμη.",contract
     reason=str((data.get("data") or {}).get("reason") or data.get("reason") or "unknown") if isinstance(data,dict) else "unknown"
@@ -87,7 +98,7 @@ def clean_flows():
 
 def new_validated_flow(code,contract=None):
     clean_flows(); flow_id=secrets.token_urlsafe(32)
-    safe_contract=contract if isinstance(contract,dict) else {"kind":"unknown","duration_minutes":0,"duration_source":"none","production_runtime_enabled":False,"qa_runtime_seconds":60}
+    safe_contract=contract if isinstance(contract,dict) else {"kind":"unknown","duration_minutes":0,"duration_source":"none","production_runtime_enabled":False,"qa_runtime_seconds":60,"startup_grace_seconds":0,"max_runtime_seconds":60}
     with STATE_LOCK: FLOWS[flow_id]={"state":"validated","code":code,"created":time.time(),"message":"Ο κωδικός επιβεβαιώθηκε.","support_contract":safe_contract}
     return flow_id
 
@@ -146,7 +157,7 @@ def styles():
 
 def wrap(content,refresh=None):
     refresh_tag=f'<meta http-equiv="refresh" content="3;url=?flow={html.escape(refresh)}">' if refresh else ''
-    return f'''<!doctype html><html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">{refresh_tag}<title>Smart Pro Remote Support</title>{styles()}</head><body><main class="shell"><div class="eyebrow">SMART PRO REMOTE SUPPORT</div><h1>Προσωρινή τεχνική υποστήριξη</h1>{content}<div class="version">Session Duration Contract Foundation · v{VERSION}</div></main></body></html>'''.encode("utf-8")
+    return f'''<!doctype html><html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">{refresh_tag}<title>Smart Pro Remote Support</title>{styles()}</head><body><main class="shell"><div class="eyebrow">SMART PRO REMOTE SUPPORT</div><h1>Προσωρινή τεχνική υποστήριξη</h1>{content}<div class="version">Production Session Runtime Foundation · v{VERSION}</div></main></body></html>'''.encode("utf-8")
 
 def entry_page(status=None,message=None):
     notice=f'<div class="notice error"><strong>Δεν ολοκληρώθηκε η επιβεβαίωση.</strong><span>{html.escape(message or "")}</span></div>' if status=='error' else ''
@@ -159,8 +170,9 @@ def validated_page(flow_id):
     raw_duration=contract.get("duration_minutes") or 0
     try: duration=int(raw_duration)
     except Exception: duration=0
-    if duration in (30,60,90):
-        duration_block=f'<div class="notice success"><strong>Πακέτο υποστήριξης: {duration} λεπτά</strong><span>Η αγορασμένη διάρκεια αναγνωρίστηκε από την πληρωμένη συνεδρία. Σε αυτή την έκδοση QA ο πραγματικός χρόνος σύνδεσης παραμένει ακόμη κλειδωμένος στα 60 δευτερόλεπτα.</span></div>'
+    production=bool(contract.get("production_runtime_enabled") is True)
+    if duration in (30,60,90) and production:
+        duration_block=f'<div class="notice success"><strong>Πακέτο υποστήριξης: {duration} λεπτά</strong><span>Η πραγματική διάρκεια της πληρωμένης συνεδρίας είναι ενεργή. Υπάρχει έως 60 δευτερόλεπτα επιπλέον χρόνος ασφαλούς προετοιμασίας, ώστε η σύνδεση να μην μειώνει τα αγορασμένα λεπτά.</span></div>'
     else:
         duration_block='<div class="notice warn"><strong>Χειροκίνητη δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη εμπορική διάρκεια 30/60/90. Η τρέχουσα δοκιμή παραμένει στο ασφαλές όριο των 60 δευτερολέπτων.</span></div>'
     content=f'''<p class="lead">Ο κωδικός επιβεβαιώθηκε και η συνεδρία είναι έτοιμη.</p><div class="notice success"><strong>Ο κωδικός επιβεβαιώθηκε.</strong><span>Η απομακρυσμένη πρόσβαση δεν έχει ξεκινήσει ακόμη.</span></div>{duration_block}<div class="ready"><span class="dot"></span><div><strong>Έτοιμο για ασφαλή σύνδεση</strong><p>Με το επόμενο κουμπί ξεκινά μία προσωρινή, ελεγχόμενη συνεδρία. Μπορεί να χρειαστούν μερικά δευτερόλεπτα μέχρι να εμφανιστεί στον τεχνικό.</p></div></div><section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν γίνεται εγκατάσταση service. Η συνεδρία είναι one-time, ελέγχεται από Broker/watchdog και τερματίζεται υποχρεωτικά μέσα στο καθορισμένο όριο.</p>'''
@@ -169,7 +181,10 @@ def validated_page(flow_id):
 def status_page(flow_id,flow):
     state=flow.get('state') if flow else None
     if state=='running':
-        return wrap('''<p class="lead">Η ασφαλής σύνδεση προετοιμάζεται.</p><div class="notice warn"><strong>Σύνδεση σε εξέλιξη…</strong><span>Γίνονται οι έλεγχοι ασφαλείας, η προσωρινή προετοιμασία του agent και η σύνδεση με τον τεχνικό. Μην κλείσετε ακόμη το add-on.</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Προσωρινή συνεδρία ενεργή / υπό προετοιμασία</strong><p>Η σελίδα ενημερώνεται αυτόματα. Η σύνδεση θα τερματιστεί από τους ελεγχόμενους μηχανισμούς ακόμη κι αν κλείσει αυτή η σελίδα.</p></div></div>''',flow_id)
+        contract=flow.get("support_contract") if isinstance(flow.get("support_contract"),dict) else {}
+        duration=int(contract.get("duration_minutes") or 0) if str(contract.get("duration_minutes") or "0").isdigit() else 0
+        paid_note=f'<div class="notice success"><strong>Ενεργό πακέτο: {duration} λεπτά</strong><span>Η ασφαλής προετοιμασία δεν αφαιρεί χρόνο από το πακέτο σας.</span></div>' if contract.get("production_runtime_enabled") is True and duration in (30,60,90) else ''
+        return wrap(f'''<p class="lead">Η ασφαλής σύνδεση προετοιμάζεται.</p>{paid_note}<div class="notice warn"><strong>Σύνδεση σε εξέλιξη…</strong><span>Γίνονται οι έλεγχοι ασφαλείας, η προσωρινή προετοιμασία του agent και η σύνδεση με τον τεχνικό. Μην κλείσετε ακόμη το add-on.</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Προσωρινή συνεδρία ενεργή / υπό προετοιμασία</strong><p>Η σελίδα ενημερώνεται αυτόματα. Η σύνδεση μπορεί να τερματιστεί νωρίτερα με ασφαλή εντολή του τεχνικού.</p></div></div>''',flow_id)
     if state=='completed':
         return wrap(f'''<p class="lead">Η προσωρινή συνεδρία ολοκληρώθηκε.</p><div class="notice success"><strong>Η υποστήριξη τερματίστηκε με ασφάλεια.</strong><span>{html.escape(flow.get("message") or "")}</span></div><p class="security">Ο προσωρινός runtime agent έχει τερματιστεί και τα runtime αρχεία καθαρίστηκαν από το Phase F safety flow.</p>''')
     if state=='failed':
