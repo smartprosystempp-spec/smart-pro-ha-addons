@@ -1,3 +1,10 @@
+# 0.9.3 — Live Extension Consent Runtime
+
+- Dynamic server-authoritative runtime ceiling can increase only after Broker-approved customer extension consent.
+- Same foreground MeshAgent process continues; no reconnect/reinstall.
+- Local deadline guard reads a protected runtime-max file and remains fail-closed with an 8-hour absolute safety cap.
+- Manual QA stays 60s; initial paid 30/60/90 contract remains unchanged.
+
 # 0.9.2 — Production Session Runtime Foundation
 
 - Paid Guest 30/60/90 sessions now accept only the exact Broker runtime policies 1860/3660/5460 seconds (purchased time + fixed 60s startup allowance).

@@ -1,3 +1,7 @@
+## Runtime extension 0.9.3
+
+When a paid Guest session is already running, the Broker may increase max_runtime_seconds only after an explicit customer-approved extension. The client accepts only non-decreasing values within the local absolute safety cap and updates the same running process deadline without reconnect.
+
 # Smart Pro Remote Support 0.9.0
 
 Η 0.9.0 συνδέει το customer-facing Ingress UI με τον controlled Phase F μηχανισμό. Μετά από έγκυρο code απαιτείται ξεχωριστό πάτημα «Έναρξη ασφαλούς σύνδεσης».
