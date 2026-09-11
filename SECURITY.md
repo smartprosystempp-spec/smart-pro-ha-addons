@@ -1,13 +1,27 @@
-# Ασφάλεια Remote Support Repository
+# Ασφάλεια — Smart Pro Temporary Remote Support
 
-## Βασικοί κανόνες
+## Βασική αρχή
 
-- Δεν αποθηκεύουμε passwords, API keys, Portal tokens ή άλλα credentials στο δημόσιο repository.
-- Η προσωρινή έκδοση δεν πρέπει να ξεκινά αυτόματα στο boot.
-- Η προσωρινή έκδοση δεν πρέπει να αποκτήσει runtime σύνδεση πριν κλειδώσει ο τρόπος έκδοσης προσωρινού enrollment/session configuration.
-- Δεν προσθέτουμε `host_network: true`, privileged permissions ή Supervisor/Home Assistant API access χωρίς τεκμηριωμένη ανάγκη.
-- Κάθε download εκτελέσιμου agent πρέπει πριν από production να αποκτήσει μηχανισμό επαλήθευσης ακεραιότητας/προέλευσης.
-- Τα τεχνικά identifiers σύνδεσης δεν εμφανίζονται σε customer-facing οδηγίες ή screenshots.
+Το Guest add-on παρέχει **προσωρινή και ελεγχόμενη** σύνδεση. Δεν πρέπει να μετατρέπεται σε μόνιμο remote-access agent.
 
-## Legacy managed 1.0.1
-Η υπάρχουσα managed runtime διατηρείται ακριβώς όπως ήταν ώστε αυτό το foundation update να μην αλλάξει production συμπεριφορά. Η σκλήρυνσή της θα γίνει σε ξεχωριστό, ελεγχόμενο release μετά από δοκιμή.
+## Κλειδωμένες αρχές
+
+- `boot: manual_only`.
+- `host_network: false`.
+- Χωρίς privileged mode ή host filesystem mounts.
+- Χωρίς `MeshAgent -install`.
+- Χωρίς service/systemd/OpenRC persistence.
+- Ο κωδικός υποστήριξης δεν αποθηκεύεται σε Home Assistant options, command-line arguments ή logs από το customer UI flow.
+- Η εκτέλεση απαιτεί Broker authorization και one-time execution boundary.
+- Η διάρκεια παραμένει server-authoritative και δεν αυξάνεται τοπικά.
+- Watch/revoke/runtime failure παραμένει fail-closed.
+- Τα προσωρινά runtime αρχεία διαγράφονται στο cleanup.
+- Δεν δημοσιεύονται credentials, raw `.msh`, tickets, tokens ή enrollment secrets στο repository ή στα customer-facing diagnostics.
+
+## Active-session refresh
+
+Η 0.9.6 μπορεί να επαναφέρει μόνο την οθόνη μιας ήδη ενεργής in-memory συνεδρίας μετά από refresh. Αυτό δεν επαναφέρει τον προσωρινό κωδικό, δεν ξανακάνει validation, δεν ζητά νέα authorization και δεν ξεκινά δεύτερο MeshAgent process.
+
+## Managed Support
+
+Η Managed 3.x γραμμή έχει ανεξάρτητο security/lifecycle model και δεν αποτελεί μέρος αυτού του repository. Η legacy Managed 2.5.2 διατηρείται μόνο ως offline ιστορικό archive.

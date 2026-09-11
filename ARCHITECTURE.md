@@ -1,21 +1,30 @@
-# Αρχιτεκτονική Smart Pro Remote Support
+# Αρχιτεκτονική — Smart Pro Temporary Remote Support
 
-## Στόχος
-Να υπάρχει καθαρός διαχωρισμός ανάμεσα στην εφάπαξ υποστήριξη και στη μόνιμη διαχειριζόμενη πρόσβαση, χωρίς ο πελάτης ή ο διαχειριστής να μπορεί να μπερδέψει τις δύο ροές.
+## Σκοπός του repository
 
-## Ροή A — Προσωρινή συνεδρία από υπολογιστή
-Προτεινόμενη επιλογή για εφάπαξ πελάτη που διαθέτει κατάλληλο υπολογιστή. Η τελική branded εφαρμογή Smart Pro Remote Support θα εκτελείται μόνο για τη συνεδρία.
+Το repository αυτό έχει πλέον έναν μόνο ρόλο: την **προσωρινή / Guest απομακρυσμένη υποστήριξη από Home Assistant OS**.
 
-## Ροή B — Προσωρινή συνεδρία από Home Assistant OS
-Εναλλακτική για εφάπαξ πελάτη χωρίς κατάλληλο υπολογιστή. Το app Home Assistant πρέπει να είναι χειροκίνητης εκκίνησης, να μην αφήνει μόνιμη πρόσβαση και να έχει ξεκάθαρη διαδικασία τερματισμού/αφαίρεσης.
+Δεν φιλοξενεί Managed / unattended add-on.
 
-Η έκδοση `0.1.0` είναι μόνο foundation/preview και δεν κάνει πραγματική απομακρυσμένη σύνδεση.
+## Guest flow
 
-## Ροή C — Managed Remote Support
-Η υπάρχουσα εφαρμογή `smart-pro-agent` είναι η μόνιμη managed έκδοση για εγκαταστάσεις που έχουν ενταχθεί στη Smart Pro System. Η runtime 1.0.1 παραμένει αμετάβλητη σε αυτό το repository release.
+Η τρέχουσα 0.9.6 ακολουθεί την ελεγχόμενη ροή:
+
+1. Ο πελάτης λαμβάνει ασφαλή Guest πρόσβαση από τη Smart Pro System.
+2. Δημιουργείται προσωρινός κωδικός μέσα στο επιτρεπόμενο χρονικό παράθυρο.
+3. Ο πελάτης ανοίγει το Home Assistant Ingress και εισάγει τον κωδικό.
+4. Η αρχική επικύρωση δεν ξεκινά αυτόματα MeshAgent.
+5. Απαιτείται ξεχωριστή ρητή ενέργεια «Έναρξη ασφαλούς σύνδεσης».
+6. Ο Broker παραμένει authoritative για authorization, διάρκεια, watch, revoke και stop.
+7. Εκτελείται μόνο προσωρινός foreground MeshAgent, χωρίς `-install` ή service persistence.
+8. Στο τέλος γίνεται termination, cleanup και ο προσωρινός node lifecycle ολοκληρώνεται από την υπάρχουσα Guest ροή.
+
+## Διαχωρισμός από Managed Support
+
+Το Smart Pro Managed Support 3.x είναι ξεχωριστό προϊόν/υποσύστημα με μόνιμη installation identity, renewable leases και unattended recovery. Δεν πρέπει να συγχωνεύεται με το Guest add-on ούτε να επιστρέψει στο ίδιο repository ως δεύτερος τρόπος λειτουργίας.
+
+Η παλιά Managed 2.5.2 θεωρείται ιστορική γραμμή και αρχειοθετείται χωριστά.
 
 ## Smart Pro Tools
-Το Smart Pro Tools δεν είναι remote-access agent. Είναι ξεχωριστό component για diagnostics, monitoring, Portal integration και άλλες λειτουργίες της εγκατάστασης.
 
-## Κανόνας αλλαγών
-Δεν μετατρέπουμε την managed έκδοση σε «διπλής χρήσης» με checkbox Temporary/Managed. Οι δύο ροές παραμένουν ανεξάρτητες ώστε να αποφεύγονται λάθη πρόσβασης.
+Το Smart Pro Tools παραμένει ξεχωριστό component για Portal integration, diagnostics, monitoring και policy data. Δεν είναι το Guest remote-support add-on.
