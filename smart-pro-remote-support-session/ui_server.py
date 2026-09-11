@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.6"
+VERSION = "0.9.7"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.6.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.7.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -172,11 +172,11 @@ def styles():
 
 def wrap(content,refresh=None):
     refresh_tag=f'<meta http-equiv="refresh" content="3;url=?flow={html.escape(refresh)}">' if refresh else ''
-    return f'''<!doctype html><html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">{refresh_tag}<title>Smart Pro Remote Support</title>{styles()}</head><body><main class="shell"><div class="eyebrow">SMART PRO REMOTE SUPPORT</div><h1>Προσωρινή τεχνική υποστήριξη</h1>{content}<div class="version">Live Extension Consent Runtime · v{VERSION}</div></main></body></html>'''.encode("utf-8")
+    return f'''<!doctype html><html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">{refresh_tag}<title>Smart Pro Remote Support</title>{styles()}</head><body><main class="shell"><div class="eyebrow">SMART PRO REMOTE SUPPORT</div><h1>Προσωρινή τεχνική υποστήριξη</h1>{content}<div class="version">Smart Pro System · Προσωρινή Υποστήριξη · v{VERSION}</div></main></body></html>'''.encode("utf-8")
 
 def entry_page(status=None,message=None):
     notice=f'<div class="notice error"><strong>Δεν ολοκληρώθηκε η επιβεβαίωση.</strong><span>{html.escape(message or "")}</span></div>' if status=='error' else ''
-    content=f'''<p class="lead">Εισαγάγετε τον προσωρινό κωδικό που δημιουργήθηκε για τη συγκεκριμένη συνεδρία σας.</p>{notice}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="validate"><label for="support_code">Κωδικός υποστήριξης</label><p class="hint">Μορφή: <strong>SP-XXXX-XXXX</strong>. Ο κωδικός ελέγχεται μέσω ασφαλούς HTTPS σύνδεσης.</p><input id="support_code" name="support_code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="SP-XXXX-XXXX" pattern="SP-[A-Za-z0-9]{{4}}-[A-Za-z0-9]{{4}}" required><button type="submit">Έλεγχος κωδικού</button></form></section><p class="security"><strong>Ασφάλεια:</strong> ο κωδικός δεν αποθηκεύεται στη Διαμόρφωση ή στα logs. Μετά την επιβεβαίωση απαιτείται ξεχωριστό πάτημα για να ξεκινήσει η προσωρινή σύνδεση.</p>'''
+    content=f'''<p class="lead">Εισαγάγετε τον προσωρινό κωδικό που δημιουργήθηκε από τον ασφαλή σύνδεσμο της συγκεκριμένης συνεδρίας σας.</p>{notice}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="validate"><label for="support_code">Κωδικός υποστήριξης</label><p class="hint">Μορφή: <strong>SP-XXXX-XXXX</strong>. Ο κωδικός ελέγχεται μέσω ασφαλούς HTTPS σύνδεσης.</p><input id="support_code" name="support_code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="SP-XXXX-XXXX" pattern="SP-[A-Za-z0-9]{{4}}-[A-Za-z0-9]{{4}}" required><button type="submit">Έλεγχος κωδικού</button></form></section><p class="security"><strong>Ασφάλεια:</strong> ο κωδικός δεν αποθηκεύεται στη Διαμόρφωση ή στα logs. Μετά την επιβεβαίωση απαιτείται ξεχωριστό πάτημα για να ξεκινήσει η προσωρινή σύνδεση.</p>'''
     return wrap(content)
 
 def validated_page(flow_id):

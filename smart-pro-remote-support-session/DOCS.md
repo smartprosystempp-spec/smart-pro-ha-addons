@@ -1,31 +1,53 @@
-# 0.9.6 Ingress Active-State Restoration
+# Smart Pro Remote Support — Οδηγός χρήσης
 
-While the Phase F child is running, the Home Assistant Ingress UI may be re-opened or manually refreshed at the root path. 0.9.6 resolves that root request to the existing in-memory `ACTIVE_FLOW` only when it is still `running`, so the customer sees the active-session screen again. No one-time support code is restored or reused, and no new Broker validation, authorization, MeshAgent process or reconnect occurs.
+Το Smart Pro Remote Support παρέχει **προσωρινή τεχνική υποστήριξη** για μία συγκεκριμένη συνεδρία. Δεν είναι μόνιμο remote-access εργαλείο και δεν εγκαθιστά υπηρεσία που παραμένει ενεργή μετά το τέλος της υποστήριξης.
 
-## Watch transport grace hotfix 0.9.5
+## Πώς συνδέεστε
 
-A transport-only failure of the execution watch no longer kills a healthy paid session after one 10-second curl stall. The client remembers the time of the last valid Broker watch and permits retry attempts only while less than 30 seconds have elapsed since that valid response. The existing local hard deadline remains authoritative and is never increased during this degraded period.
+1. Ανοίξτε τον ασφαλή σύνδεσμο της συνεδρίας που σας έχει σταλεί από το Smart Pro System.
+2. Όταν η συνεδρία είναι διαθέσιμη, δημιουργήστε τον προσωρινό κωδικό υποστήριξης.
+3. Στο Home Assistant ανοίξτε **Smart Pro Remote Support → Ingress / Web UI**.
+4. Εισαγάγετε τον κωδικό μορφής `SP-XXXX-XXXX` και πατήστε **«Έλεγχος κωδικού»**.
+5. Μετά την επιβεβαίωση πατήστε **«Έναρξη ασφαλούς σύνδεσης»**.
 
-Only curl transport errors receive the bounded grace. HTTP rejection, malformed JSON, a decreasing/invalid runtime, or a runtime above the local 8-hour safety cap still fail closed immediately. If connectivity does not recover within the grace, the session terminates with `watch_failed`.
+Η απομακρυσμένη σύνδεση ξεκινά μόνο μετά από αυτό το δεύτερο, ρητό βήμα.
 
-Live logs expose `WATCH TRANSPORT DEGRADED`, `WATCH TRANSPORT RECOVERED`, and `WATCH TRANSPORT FAIL-CLOSED` so the exact path is visible during QA.
+## Τι συμβαίνει με τον κωδικό
 
-## Watch transport hotfix 0.9.4
+Ο προσωρινός κωδικός χρησιμοποιείται μόνο για τη συγκεκριμένη συνεδρία. Η customer-facing ροή δεν τον αποθηκεύει στη Διαμόρφωση, σε command-line arguments ή στα logs. Μετά την επιβεβαίωση κρατείται μόνο προσωρινά στη μνήμη μέχρι να ξεκινήσει η ελεγχόμενη σύνδεση.
 
-One transient watch transport failure is retried exactly once after 2 seconds. The retry does not grant time: the existing local deadline remains unchanged until a valid Broker HTTP 200 JSON response supplies a non-decreasing `max_runtime_seconds`. A second transport failure, any HTTP rejection, malformed JSON, runtime decrease or safety-cap violation remains fail-closed.
+## Διάρκεια συνεδρίας
 
-## Runtime extension 0.9.4
+Για τις κανονικές Guest υπηρεσίες η διάρκεια 30/60/90 λεπτών ορίζεται από το Smart Pro System. Το add-on δεν μπορεί να αυξήσει μόνο του τον διαθέσιμο χρόνο.
 
-When a paid Guest session is already running, the Broker may increase max_runtime_seconds only after an explicit customer-approved extension. The client accepts only non-decreasing values within the local absolute safety cap and updates the same running process deadline without reconnect.
+Αν χρειαστεί παράταση, αυτή εφαρμόζεται μόνο μέσω της υπάρχουσας διαδικασίας έγκρισης/συγκατάθεσης και συνεχίζεται η ίδια ενεργή σύνδεση χωρίς νέο MeshAgent process.
 
-# Smart Pro Remote Support 0.9.0
+## Αν ανανεώσετε ή ξανανοίξετε το Ingress
 
-Η 0.9.0 συνδέει το customer-facing Ingress UI με τον controlled Phase F μηχανισμό. Μετά από έγκυρο code απαιτείται ξεχωριστό πάτημα «Έναρξη ασφαλούς σύνδεσης».
+Όσο η ίδια προσωρινή συνεδρία είναι ακόμη ενεργή, η οθόνη κατάστασης επανεμφανίζεται. Αυτό είναι μόνο οπτική αποκατάσταση της τρέχουσας in-memory κατάστασης:
 
-Ο κωδικός δεν χρειάζεται να αποθηκεύεται στη Διαμόρφωση. Η παλιά `session_code` επιλογή παραμένει προσωρινά μόνο για upgrade compatibility και αγνοείται από τη νέα ροή.
+- δεν επαναχρησιμοποιείται ο προσωρινός κωδικός,
+- δεν γίνεται δεύτερη επικύρωση,
+- δεν ζητείται νέα execution authorization,
+- δεν ξεκινά δεύτερη σύνδεση.
 
-Δεν γίνεται `-install` ή service persistence. Η εκτέλεση παραμένει δεμένη με Broker E/F authorization, one-time tickets, watchdog/revoke και hard runtime deadline.
+## Όταν ολοκληρωθεί ή διακοπεί η συνεδρία
 
+Η προσωρινή εκτέλεση τερματίζεται και τα runtime αρχεία καθαρίζονται. Αν η συνεδρία λήξει, ανακληθεί ή παρουσιαστεί πρόβλημα στην ασφαλή επιτήρηση, η ροή σταματά fail-closed αντί να συνεχίζει χωρίς επιβεβαιωμένη authorization.
 
-## Production runtime 0.9.2
-Paid Guest 30/60/90 uses a server-authoritative runtime of purchased minutes plus a fixed 60-second non-billable startup allowance. Manual QA stays at 60 seconds. An Admin stop request is consumed by the watchdog and still performs the normal cleanup/report path.
+## Διαμόρφωση
+
+Η υπηρεσία ασφαλούς σύνδεσης είναι προρυθμισμένη. **Δεν απαιτείται αλλαγή στην κανονική χρήση.** Το πεδίο υπάρχει ακόμη επειδή ο σημερινός execution core το χρησιμοποιεί ως endpoint πηγής. Μην το αλλάζετε εκτός αν δοθούν συγκεκριμένες τεχνικές οδηγίες από το Smart Pro System.
+
+## Αρχείο καταγραφής
+
+Αν ζητηθεί τεχνικός έλεγχος, χρησιμοποιήστε την καρτέλα **Αρχείο καταγραφής** του Home Assistant. Τα logs περιέχουν λειτουργικές ενδείξεις και ασφαλείς κατηγορίες σφάλματος, όχι τον προσωρινό κωδικό υποστήριξης.
+
+## Βασικές αρχές ασφάλειας
+
+- `boot: manual_only`
+- χωρίς MeshAgent `-install`
+- χωρίς service/systemd persistence
+- χωρίς αυτόματη δεύτερη execution προσπάθεια
+- Broker authorization / watch / revoke παραμένουν authoritative
+- υποχρεωτικό cleanup μετά τον τερματισμό

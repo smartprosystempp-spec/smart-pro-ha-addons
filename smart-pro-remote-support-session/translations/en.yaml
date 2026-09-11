@@ -1,8 +1,8 @@
 configuration:
   broker_url:
-    name: Smart Pro Broker endpoint
-    description: HTTPS endpoint for the Smart Pro secure service. No change is normally required.
+    name: Smart Pro secure service
+    description: Preconfigured HTTPS endpoint for Smart Pro System. No change is required during normal use.
   session_code:
     name: Legacy session-code field
-    description: Temporarily retained only for upgrade compatibility. The 0.8.0 flow uses Open Web UI and does not read this field.
+    description: Retained only for compatibility with older installations. Temporary support codes are entered only in the Web UI and are not stored here.
 network: {}

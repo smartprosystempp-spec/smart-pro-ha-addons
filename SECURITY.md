@@ -20,7 +20,7 @@
 
 ## Active-session refresh
 
-Η 0.9.6 μπορεί να επαναφέρει μόνο την οθόνη μιας ήδη ενεργής in-memory συνεδρίας μετά από refresh. Αυτό δεν επαναφέρει τον προσωρινό κωδικό, δεν ξανακάνει validation, δεν ζητά νέα authorization και δεν ξεκινά δεύτερο MeshAgent process.
+Η 0.9.7 μπορεί να επαναφέρει μόνο την οθόνη μιας ήδη ενεργής in-memory συνεδρίας μετά από refresh. Αυτό δεν επαναφέρει τον προσωρινό κωδικό, δεν ξανακάνει validation, δεν ζητά νέα authorization και δεν ξεκινά δεύτερο MeshAgent process.
 
 ## Managed Support
 

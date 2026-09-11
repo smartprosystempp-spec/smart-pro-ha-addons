@@ -6,7 +6,7 @@
 
 Το repository περιέχει πλέον **ένα μόνο add-on**:
 
-### Smart Pro Remote Support — 0.9.6
+### Smart Pro Remote Support — 0.9.7
 
 Το add-on χρησιμοποιείται για ελεγχόμενη προσωρινή απομακρυσμένη υποστήριξη μέσω Home Assistant OS.
 

@@ -1,17 +1,31 @@
-# Smart Pro Remote Support — Guest Runtime 0.9.6
+# Smart Pro Remote Support 0.9.7
 
-Version 0.9.6 keeps the live-verified Guest Phase F runtime and restores the active Ingress status page after a normal browser refresh/return while the same execution is still running.
+Το **Smart Pro Remote Support** χρησιμοποιείται για προσωρινή και ελεγχόμενη τεχνική υποστήριξη σε Home Assistant.
 
-## Ingress refresh behavior
-- During an active execution, opening/refreshing the Ingress root restores only the current in-memory running UI flow.
-- It does not recover the support code, repeat validation, request new Phase E/F authorization, or execute MeshAgent again.
-- If no execution is active, the normal code-entry page is shown.
+Η σύνδεση δεν ξεκινά αυτόματα. Ο πελάτης εισάγει έναν προσωρινό κωδικό που δημιουργείται από τον ασφαλή σύνδεσμο της συνεδρίας, ο κωδικός επαληθεύεται και απαιτείται δεύτερη ρητή ενέργεια **«Έναρξη ασφαλούς σύνδεσης»**.
 
-## Security model
-- Code validation happens first without requesting bootstrap material.
-- After validation the code is held only in short-lived process memory for up to 5 minutes.
-- Remote execution requires a separate explicit customer action: **Έναρξη ασφαλούς σύνδεσης**.
-- The code is passed to the Phase F shell through a private stdin pipe; it is not written to Home Assistant options, command-line arguments, temporary code files, or logs.
-- Only one Phase F execution can be active inside the add-on at a time.
-- Existing one-shot guard, Broker authorization chain, SHA/ELF checks, revoke/watch, server-authoritative hard deadline (manual QA 60s; paid Guest 30/60/90 + 60s startup allowance), no-install policy and cleanup remain in the execution core.
-- Add-on shutdown terminates any active Phase F child process.
+## Καθημερινή χρήση
+
+1. Ανοίξτε το **Ingress / Web UI** του add-on.
+2. Εισαγάγετε τον προσωρινό κωδικό μορφής `SP-XXXX-XXXX`.
+3. Πατήστε **«Έλεγχος κωδικού»**.
+4. Αφού επιβεβαιωθεί η συνεδρία, πατήστε **«Έναρξη ασφαλούς σύνδεσης»**.
+5. Η συνεδρία τερματίζεται αυτόματα όταν λήξει, ανακληθεί ή σταματήσει από την ασφαλή ροή υποστήριξης.
+
+## Τι δεν κάνει
+
+- Δεν ξεκινά μαζί με το Home Assistant (`boot: manual_only`).
+- Δεν εγκαθιστά MeshAgent ως service.
+- Δεν δημιουργεί μόνιμη απομακρυσμένη πρόσβαση.
+- Δεν αποθηκεύει τον προσωρινό κωδικό στα Home Assistant options ή στα logs της customer UI ροής.
+- Δεν επαναλαμβάνει αυτόματα αποτυχημένη execution προσπάθεια με τον ίδιο κωδικό.
+
+## Διάρκεια και ασφάλεια
+
+Για πληρωμένες Guest συνεδρίες η διάρκεια 30/60/90 λεπτών παραμένει server-authoritative, με το ήδη επαληθευμένο startup allowance των 60 δευτερολέπτων. Εγκεκριμένη παράταση εφαρμόζεται μόνο μέσω της υπάρχουσας ασφαλούς ροής συγκατάθεσης και χωρίς δεύτερο reconnect.
+
+Η λήξη, ανάκληση, αποτυχία watch ή παραβίαση του runtime contract οδηγεί σε fail-closed τερματισμό και cleanup.
+
+## Refresh κατά τη διάρκεια συνεδρίας
+
+Αν το Ingress ανανεωθεί ενώ η ίδια συνεδρία εκτελείται, η 0.9.7 επαναφέρει μόνο την ενεργή in-memory οθόνη κατάστασης. Δεν επαναφέρει ή ξαναχρησιμοποιεί τον κωδικό, δεν ζητά νέα authorization και δεν ξεκινά δεύτερο MeshAgent process.
