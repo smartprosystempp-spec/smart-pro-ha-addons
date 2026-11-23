@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.8 — Customer wording & clearer two-step screens
+
+- Οι οθόνες δείχνουν «Βήμα 1 από 2» (κωδικός) και «Βήμα 2 από 2» (πάτημα «Έναρξη ασφαλούς σύνδεσης»). Το προειδοποιητικό πλαίσιο στο βήμα 2 λέει καθαρά ότι η σύνδεση δεν έχει ξεκινήσει.
+- Η διάρκεια εμφανίζεται ουδέτερα (όχι πράσινο «έτοιμο») και λέει ότι μετράει από το πάτημα «Έναρξη ασφαλούς σύνδεσης».
+- Αφαιρέθηκαν όροι όπως HTTPS, logs, Διαμόρφωση, agent, runtime, Phase F, Broker/watchdog, fail-closed από κείμενα προς τον πελάτη.
+- Νέα περιγραφή στην κάρτα του Home Assistant.
+- Το execution core (phase-f-ui-0.9.8.sh) αλλάζει μόνο στο version marker. Χωρίς αλλαγή σε validation, authorization, διάρκεια, παράταση, watch/revoke ή cleanup.
+
 ## 0.9.7 — Presentation & Documentation Polish
 
 - Καθαρό customer-facing κείμενο στην κάρτα του Home Assistant.

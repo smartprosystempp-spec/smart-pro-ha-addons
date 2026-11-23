@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.7"
+VERSION = "0.9.8"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.7.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.8.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -142,7 +142,7 @@ def run_phase_f(flow_id, code):
                 if success and rc==0 and not saw_failure:
                     f["state"]="completed"; f["message"]="Η προσωρινή ασφαλής σύνδεση ολοκληρώθηκε και τερματίστηκε καθαρά."
                 else:
-                    f["state"]="failed"; f["message"]="Η ασφαλής σύνδεση δεν ολοκληρώθηκε. Η διαδικασία σταμάτησε fail-closed."
+                    f["state"]="failed"; f["message"]="Η ασφαλής σύνδεση δεν ολοκληρώθηκε και σταμάτησε με ασφάλεια."
     except Exception:
         print("CUSTOMER UI BRIDGE: execution worker failure — χωρίς καταγραφή code.",flush=True)
         with STATE_LOCK:
@@ -158,7 +158,7 @@ def start_flow(flow_id):
     with STATE_LOCK:
         f=FLOWS.get(flow_id)
         if not f or f.get("state")!="validated": return False,"Η επιβεβαιωμένη συνεδρία δεν είναι πλέον διαθέσιμη. Ελέγξτε ξανά τον κωδικό."
-        if ACTIVE_FLOW is not None: return False,"Υπάρχει ήδη προσωρινή συνεδρία σε εξέλιξη σε αυτό το add-on."
+        if ACTIVE_FLOW is not None: return False,"Υπάρχει ήδη προσωρινή συνεδρία σε εξέλιξη."
         code=f.pop("code","")
         if not CODE_RE.fullmatch(code): return False,"Ο προσωρινός κωδικός δεν είναι πλέον διαθέσιμος. Ελέγξτε ξανά τον κωδικό."
         f.update(state="running",started=time.time(),message="Προετοιμάζεται η ασφαλής σύνδεση."); ACTIVE_FLOW=flow_id
@@ -168,6 +168,7 @@ def styles():
     return '''<style>
 :root{--bg:#07111f;--panel:#111e31;--panel2:#0d192a;--line:#29405e;--text:#f5f8fd;--muted:#a9bfd8;--accent:#65c7f7;--accent2:#89dcff;--success:#42d39d;--successbg:#0e322c;--warn:#f6c85f;--warnbg:#372d0b;--error:#ff8e8e;--errorbg:#3a1d24}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;padding:28px}.shell{width:min(760px,100%);background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,.28)}.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:800}h1{font-size:clamp(32px,5vw,48px);line-height:1.05;margin:10px 0 12px}.lead{color:var(--muted);font-size:17px;line-height:1.6;margin:0 0 28px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:22px}label{display:block;font-weight:800;margin-bottom:9px}.hint{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 15px}input[type=text]{width:100%;border:1px solid #395372;border-radius:13px;background:#081424;color:#fff;font-size:21px;letter-spacing:.08em;padding:15px 16px;outline:none;text-transform:uppercase}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(101,199,247,.14)}button{margin-top:14px;border:0;border-radius:13px;padding:14px 18px;background:var(--accent);color:#06111d;font-size:16px;font-weight:900;cursor:pointer;width:100%}button:hover{background:var(--accent2)}.notice{margin:0 0 18px;border-radius:15px;padding:16px 18px;display:flex;gap:5px;flex-direction:column;line-height:1.45}.success{border:1px solid #329b7e;background:var(--successbg)}.warn{border:1px solid #967719;background:var(--warnbg)}.error{border:1px solid #a84f5f;background:var(--errorbg);color:#ffe6e9}.ready{margin:18px 0;border-top:1px solid var(--line);padding-top:18px;display:flex;gap:12px;align-items:flex-start}.ready p{margin:5px 0 0;color:var(--muted);line-height:1.5}.dot{width:12px;height:12px;border-radius:50%;background:var(--success);margin-top:5px;box-shadow:0 0 0 5px rgba(66,211,157,.12)}.pulse{animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}.security{margin-top:18px;color:var(--muted);font-size:13px;line-height:1.55}.security strong{color:var(--text)}.version{margin-top:24px;color:#7691b1;font-size:12px;text-align:center}@media(max-width:560px){body{padding:12px}.shell{padding:24px 18px;border-radius:18px}}
+.notice.info{background:var(--panel2);border:1px solid var(--line)}.notice.todo{background:var(--warnbg);border:2px solid var(--warn)}.step{font-size:13px;font-weight:800;color:var(--accent);letter-spacing:.06em;margin:0 0 8px}
 </style>'''
 
 def wrap(content,refresh=None):
@@ -176,7 +177,7 @@ def wrap(content,refresh=None):
 
 def entry_page(status=None,message=None):
     notice=f'<div class="notice error"><strong>Δεν ολοκληρώθηκε η επιβεβαίωση.</strong><span>{html.escape(message or "")}</span></div>' if status=='error' else ''
-    content=f'''<p class="lead">Εισαγάγετε τον προσωρινό κωδικό που δημιουργήθηκε από τον ασφαλή σύνδεσμο της συγκεκριμένης συνεδρίας σας.</p>{notice}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="validate"><label for="support_code">Κωδικός υποστήριξης</label><p class="hint">Μορφή: <strong>SP-XXXX-XXXX</strong>. Ο κωδικός ελέγχεται μέσω ασφαλούς HTTPS σύνδεσης.</p><input id="support_code" name="support_code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="SP-XXXX-XXXX" pattern="SP-[A-Za-z0-9]{{4}}-[A-Za-z0-9]{{4}}" required><button type="submit">Έλεγχος κωδικού</button></form></section><p class="security"><strong>Ασφάλεια:</strong> ο κωδικός δεν αποθηκεύεται στη Διαμόρφωση ή στα logs. Μετά την επιβεβαίωση απαιτείται ξεχωριστό πάτημα για να ξεκινήσει η προσωρινή σύνδεση.</p>'''
+    content=f'''<p class="step">ΒΗΜΑ 1 ΑΠΟ 2</p><p class="lead">Εισαγάγετε τον προσωρινό κωδικό που δημιουργήθηκε από τον ασφαλή σύνδεσμο της συγκεκριμένης συνεδρίας σας.</p>{notice}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="validate"><label for="support_code">Κωδικός υποστήριξης</label><p class="hint">Μορφή: <strong>SP-XXXX-XXXX</strong>. Ο κωδικός ελέγχεται με ασφαλή σύνδεση.</p><input id="support_code" name="support_code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="SP-XXXX-XXXX" pattern="SP-[A-Za-z0-9]{{4}}-[A-Za-z0-9]{{4}}" required><button type="submit">Έλεγχος κωδικού</button></form></section><p class="security"><strong>Ασφάλεια:</strong> ο κωδικός δεν αποθηκεύεται πουθενά στο σύστημά σας. Μετά τον έλεγχο, η σύνδεση ξεκινά μόνο όταν πατήσετε εσείς το κουμπί «Έναρξη ασφαλούς σύνδεσης».</p>'''
     return wrap(content)
 
 def validated_page(flow_id):
@@ -187,10 +188,10 @@ def validated_page(flow_id):
     except Exception: duration=0
     production=bool(contract.get("production_runtime_enabled") is True)
     if duration in (30,60,90) and production:
-        duration_block=f'<div class="notice success"><strong>Πακέτο υποστήριξης: {duration} λεπτά</strong><span>Η πραγματική διάρκεια της πληρωμένης συνεδρίας είναι ενεργή. Υπάρχει έως 60 δευτερόλεπτα επιπλέον χρόνος ασφαλούς προετοιμασίας, ώστε η σύνδεση να μην μειώνει τα αγορασμένα λεπτά.</span></div>'
+        duration_block=f'<div class="notice info"><strong>Διάρκεια υποστήριξης: {duration} λεπτά</strong><span>Η διάρκεια μετράει από τη στιγμή που θα πατήσετε «Έναρξη ασφαλούς σύνδεσης».</span></div>'
     else:
-        duration_block='<div class="notice warn"><strong>Χειροκίνητη δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη εμπορική διάρκεια 30/60/90. Η τρέχουσα δοκιμή παραμένει στο ασφαλές όριο των 60 δευτερολέπτων.</span></div>'
-    content=f'''<p class="lead">Ο κωδικός επιβεβαιώθηκε και η συνεδρία είναι έτοιμη.</p><div class="notice success"><strong>Ο κωδικός επιβεβαιώθηκε.</strong><span>Η απομακρυσμένη πρόσβαση δεν έχει ξεκινήσει ακόμη.</span></div>{duration_block}<div class="ready"><span class="dot"></span><div><strong>Έτοιμο για ασφαλή σύνδεση</strong><p>Με το επόμενο κουμπί ξεκινά μία προσωρινή, ελεγχόμενη συνεδρία. Μπορεί να χρειαστούν μερικά δευτερόλεπτα μέχρι να εμφανιστεί στον τεχνικό.</p></div></div><section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν γίνεται εγκατάσταση service. Η συνεδρία είναι one-time, ελέγχεται από Broker/watchdog και τερματίζεται υποχρεωτικά μέσα στο καθορισμένο όριο.</p>'''
+        duration_block='<div class="notice warn"><strong>Δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη διάρκεια 30/60/90. Η δοκιμή κλείνει μετά από 60 δευτερόλεπτα.</span></div>'
+    content=f'''<p class="step">ΒΗΜΑ 2 ΑΠΟ 2</p><p class="lead">Ο κωδικός είναι σωστός. Απομένει ένα βήμα.</p><div class="notice todo"><strong>Η σύνδεση δεν έχει ξεκινήσει ακόμα.</strong><span>Πατήστε το κουμπί «Έναρξη ασφαλούς σύνδεσης» παρακάτω. Μπορεί να περάσουν μερικά δευτερόλεπτα μέχρι να συνδεθεί ο τεχνικός.</span></div>{duration_block}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν εγκαθίσταται τίποτα μόνιμα. Η σύνδεση κλείνει αυτόματα όταν τελειώσει η διάρκεια.</p>'''
     return wrap(content)
 
 def status_page(flow_id,flow):
@@ -198,13 +199,13 @@ def status_page(flow_id,flow):
     if state=='running':
         contract=flow.get("support_contract") if isinstance(flow.get("support_contract"),dict) else {}
         duration=int(contract.get("duration_minutes") or 0) if str(contract.get("duration_minutes") or "0").isdigit() else 0
-        paid_note=f'<div class="notice success"><strong>Ενεργό πακέτο: {duration} λεπτά</strong><span>Η ασφαλής προετοιμασία δεν αφαιρεί χρόνο από το πακέτο σας.</span></div>' if contract.get("production_runtime_enabled") is True and duration in (30,60,90) else ''
-        return wrap(f'''<p class="lead">Η ασφαλής σύνδεση προετοιμάζεται.</p>{paid_note}<div class="notice warn"><strong>Σύνδεση σε εξέλιξη…</strong><span>Γίνονται οι έλεγχοι ασφαλείας, η προσωρινή προετοιμασία του agent και η σύνδεση με τον τεχνικό. Μην κλείσετε ακόμη το add-on.</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Προσωρινή συνεδρία ενεργή / υπό προετοιμασία</strong><p>Η σελίδα ενημερώνεται αυτόματα. Η σύνδεση μπορεί να τερματιστεί νωρίτερα με ασφαλή εντολή του τεχνικού.</p></div></div>''',flow_id)
+        paid_note=f'<div class="notice info"><strong>Διάρκεια υποστήριξης: {duration} λεπτά</strong><span>Η διάρκεια μετράει από τη στιγμή που πατήσατε «Έναρξη ασφαλούς σύνδεσης».</span></div>' if contract.get("production_runtime_enabled") is True and duration in (30,60,90) else ''
+        return wrap(f'''<p class="lead">Η σύνδεση ξεκίνησε.</p>{paid_note}<div class="notice warn"><strong>Η σύνδεση είναι σε εξέλιξη.</strong><span>Μην κλείσετε το πρόσθετο. Αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Ο τεχνικός μπορεί να κλείσει τη σύνδεση νωρίτερα, όταν ολοκληρώσει.</p></div></div>''',flow_id)
     if state=='completed':
-        return wrap(f'''<p class="lead">Η προσωρινή συνεδρία ολοκληρώθηκε.</p><div class="notice success"><strong>Η υποστήριξη τερματίστηκε με ασφάλεια.</strong><span>{html.escape(flow.get("message") or "")}</span></div><p class="security">Ο προσωρινός runtime agent έχει τερματιστεί και τα runtime αρχεία καθαρίστηκαν από το Phase F safety flow.</p>''')
+        return wrap(f'''<p class="lead">Η προσωρινή συνεδρία ολοκληρώθηκε.</p><div class="notice success"><strong>Η υποστήριξη τερματίστηκε με ασφάλεια.</strong><span>Η σύνδεση έκλεισε και δεν έχει μείνει τίποτα ενεργό στο σύστημά σας.</span></div><p class="security">Μπορείτε να κλείσετε το πρόσθετο.</p>''')
     if state=='failed':
-        return wrap(f'''<p class="lead">Η ασφαλής σύνδεση δεν ολοκληρώθηκε.</p><div class="notice error"><strong>Η διαδικασία σταμάτησε fail-closed.</strong><span>{html.escape(flow.get("message") or "")}</span></div><p class="security">Δεν γίνεται αυτόματη δεύτερη execution προσπάθεια. Για νέα προσπάθεια απαιτείται νέο ελεγχόμενο βήμα.</p>''')
-    return entry_page('error','Η προσωρινή UI συνεδρία έληξε. Ελέγξτε ξανά τον κωδικό.')
+        return wrap(f'''<p class="lead">Η ασφαλής σύνδεση δεν ολοκληρώθηκε.</p><div class="notice error"><strong>Η σύνδεση σταμάτησε με ασφάλεια.</strong><span>Δεν έγινε καμία αλλαγή στο σύστημά σας.</span></div><p class="security">Δεν γίνεται αυτόματη νέα προσπάθεια. Επικοινωνήστε μαζί μας για να σας βοηθήσουμε να ξεκινήσετε ξανά.</p>''')
+    return entry_page('error','Η σελίδα έληξε. Εισαγάγετε ξανά τον κωδικό.')
 
 class Handler(BaseHTTPRequestHandler):
     server_version="SmartProIngress"; sys_version=""

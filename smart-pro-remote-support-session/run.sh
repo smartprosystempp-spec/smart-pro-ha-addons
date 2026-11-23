@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.9.7"
+VERSION="0.9.8"
 PORT="8099"
 
 umask 077
