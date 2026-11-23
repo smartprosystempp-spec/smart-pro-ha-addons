@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.8"
+VERSION = "0.9.9"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.8.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.9.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -134,6 +134,10 @@ def run_phase_f(flow_id, code):
             line=line.rstrip("\n"); print(line,flush=True)
             if "CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ" in line: success=True
             if line.startswith("ΣΦΑΛΜΑ:"): saw_failure=True
+            if line.startswith("ΕΠΙΤΥΧΙΑ: Το MeshAgent ξεκίνησε ως ephemeral foreground"):
+                with STATE_LOCK:
+                    f0=FLOWS.get(flow_id)
+                    if f0: f0["agent_up"]=True; f0["agent_started"]=time.time()-3
         rc=proc.wait()
         with STATE_LOCK:
             f=FLOWS.get(flow_id)
@@ -163,6 +167,23 @@ def start_flow(flow_id):
         if not CODE_RE.fullmatch(code): return False,"Ο προσωρινός κωδικός δεν είναι πλέον διαθέσιμος. Ελέγξτε ξανά τον κωδικό."
         f.update(state="running",started=time.time(),message="Προετοιμάζεται η ασφαλής σύνδεση."); ACTIVE_FLOW=flow_id
     threading.Thread(target=run_phase_f,args=(flow_id,code),daemon=True).start(); return True,"started"
+
+RUNTIME_MAX_FILE="/tmp/smart-pro-phase-f-runtime/.runtime-max-seconds"
+
+def minutes_left(flow):
+    """Εκτίμηση λεπτών που απομένουν. Διαβάζει μόνο το ήδη υπάρχον runtime όριο (ενημερώνεται και από εγκεκριμένη παράταση)."""
+    try:
+        started=float(flow.get("agent_started") or 0)
+        if not started: return None
+        max_s=int(open(RUNTIME_MAX_FILE).read().strip())
+        contract=flow.get("support_contract") if isinstance(flow.get("support_contract"),dict) else {}
+        try: grace=int(contract.get("startup_grace_seconds") or 0)
+        except Exception: grace=0
+        rem=started+max_s-time.time()
+        if rem>grace>0: rem-=grace
+        return max(0,int(rem))
+    except Exception:
+        return None
 
 def styles():
     return '''<style>
@@ -197,10 +218,15 @@ def validated_page(flow_id):
 def status_page(flow_id,flow):
     state=flow.get('state') if flow else None
     if state=='running':
-        contract=flow.get("support_contract") if isinstance(flow.get("support_contract"),dict) else {}
-        duration=int(contract.get("duration_minutes") or 0) if str(contract.get("duration_minutes") or "0").isdigit() else 0
-        paid_note=f'<div class="notice info"><strong>Διάρκεια υποστήριξης: {duration} λεπτά</strong><span>Η διάρκεια μετράει από τη στιγμή που πατήσατε «Έναρξη ασφαλούς σύνδεσης».</span></div>' if contract.get("production_runtime_enabled") is True and duration in (30,60,90) else ''
-        return wrap(f'''<p class="lead">Η σύνδεση ξεκίνησε.</p>{paid_note}<div class="notice warn"><strong>Η σύνδεση είναι σε εξέλιξη.</strong><span>Μην κλείσετε το πρόσθετο. Αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Ο τεχνικός μπορεί να κλείσει τη σύνδεση νωρίτερα, όταν ολοκληρώσει.</p></div></div>''',flow_id)
+        left=minutes_left(flow) if flow.get("agent_up") else None
+        if flow.get("agent_up"):
+            if left is None: time_txt="Ο χρόνος υποστήριξης μετράει από τη στιγμή που ξεκίνησε η σύνδεση."
+            elif left<60: time_txt="Απομένει λιγότερο από 1 λεπτό."
+            else: time_txt=f"Απομένουν περίπου {(left+59)//60} λεπτά."
+            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p><div class="notice success"><strong>Ο τεχνικός μπορεί να συνδεθεί τώρα.</strong><span>Παραμείνετε διαθέσιμοι. Μην κλείσετε το πρόσθετο: αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="notice info"><strong>Χρόνος υποστήριξης</strong><span>{time_txt}</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Αν χρειαστεί λίγος επιπλέον χρόνος, ο τεχνικός μπορεί να προτείνει παράταση και θα την εγκρίνετε από τον ασφαλή σύνδεσμο του email σας.</p></div></div>'''
+        else:
+            body='''<p class="lead">Η σύνδεση ξεκινά.</p><div class="notice warn"><strong>Η σύνδεση προετοιμάζεται.</strong><span>Περιμένετε λίγα δευτερόλεπτα και μην κλείσετε το πρόσθετο.</span></div>'''
+        return wrap(body,flow_id)
     if state=='completed':
         return wrap(f'''<p class="lead">Η προσωρινή συνεδρία ολοκληρώθηκε.</p><div class="notice success"><strong>Η υποστήριξη τερματίστηκε με ασφάλεια.</strong><span>Η σύνδεση έκλεισε και δεν έχει μείνει τίποτα ενεργό στο σύστημά σας.</span></div><p class="security">Μπορείτε να κλείσετε το πρόσθετο.</p>''')
     if state=='failed':
