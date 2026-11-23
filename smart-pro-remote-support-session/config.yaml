@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support"
 description: "Προσωρινή τεχνική υποστήριξη από το Smart Pro System. Εισάγετε τον κωδικό που σας στείλαμε και η σύνδεση ξεκινά μόνο όταν την ξεκινήσετε εσείς. Μετά το τέλος δεν μένει τίποτα εγκατεστημένο."
-version: "0.10.0"
+version: "0.11.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64
@@ -8,6 +8,7 @@ arch:
 startup: application
 boot: manual_only
 host_network: false
+homeassistant_api: true
 stage: experimental
 url: "https://smart-pro-system.gr/remote-support/"
 ingress: true

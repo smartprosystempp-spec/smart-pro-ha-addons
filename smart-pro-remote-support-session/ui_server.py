@@ -14,10 +14,12 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.10.0"
+import ha_account
+
+VERSION = "0.11.0"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.10.0.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.11.0.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -177,6 +179,52 @@ def start_flow(flow_id):
         f.update(state="running",started=time.time(),message="Προετοιμάζεται η ασφαλής σύνδεση."); ACTIVE_FLOW=flow_id
     threading.Thread(target=run_phase_f,args=(flow_id,code),daemon=True).start(); return True,"started"
 
+HA_LOCK = threading.Lock()
+
+def ha_state(flow):
+    return str((flow or {}).get("ha_state") or "none")
+
+def ha_create_account(flow_id):
+    """Μόνο μετά από ρητό πάτημα κουμπιού. Δημιουργεί, κρυπτογραφεί, παραδίδει στο Broker."""
+    with STATE_LOCK:
+        f=FLOWS.get(flow_id)
+        if not f or f.get("state")!="running" or not f.get("agent_up"): return False,"Η σύνδεση δεν είναι ενεργή αυτή τη στιγμή."
+        if ha_state(f) in ("creating","ready"): return True,"ok"
+        f["ha_state"]="creating"
+    if not HA_LOCK.acquire(blocking=False): return False,"Η δημιουργία βρίσκεται ήδη σε εξέλιξη."
+    try:
+        broker_url=load_broker_url() or DEFAULT_BROKER_URL
+        try:
+            ha_account.create_and_deliver(broker_url)
+            ok=True; reason=""
+        except Exception as exc:
+            ok=False; reason=str(exc)[:60]
+        print("HA TEMP ACCOUNT: "+("δημιουργήθηκε και παραδόθηκε κρυπτογραφημένα." if ok else "απέτυχε ("+reason+") — δεν έμεινε λογαριασμός."),flush=True)
+        with STATE_LOCK:
+            f=FLOWS.get(flow_id)
+            if f: f["ha_state"]="ready" if ok else "failed"
+        threading.Thread(target=ha_watch_and_delete,args=(flow_id,),daemon=True).start() if ok else None
+        return ok,("ok" if ok else "Δεν ήταν δυνατή η δημιουργία του προσωρινού λογαριασμού. Δεν έγινε καμία αλλαγή στο Home Assistant σας.")
+    finally:
+        HA_LOCK.release()
+
+def ha_watch_and_delete(flow_id):
+    """Σβήνει τον προσωρινό λογαριασμό μόλις τελειώσει η συνεδρία (το runtime dir εξαφανίζεται)."""
+    while True:
+        time.sleep(3)
+        with STATE_LOCK:
+            f=FLOWS.get(flow_id); running=bool(f and f.get("state")=="running")
+        if not running or not ha_account.context_alive() or SHUTTING_DOWN: break
+    done=False
+    for _ in range(5):
+        try:
+            ha_account.delete_account(); done=True; break
+        except Exception: time.sleep(3)
+    print("HA TEMP ACCOUNT: "+("διαγράφηκε." if done else "ΑΠΟΤΥΧΙΑ διαγραφής — θα επαναληφθεί στην επανεκκίνηση."),flush=True)
+    with STATE_LOCK:
+        f=FLOWS.get(flow_id)
+        if f: f["ha_state"]="removed" if done else "remove_failed"
+
 RUNTIME_MAX_FILE="/tmp/smart-pro-phase-f-runtime/.runtime-max-seconds"
 
 def minutes_left(flow):
@@ -224,6 +272,17 @@ def validated_page(flow_id):
     content=f'''<p class="step">ΒΗΜΑ 2 ΑΠΟ 2</p><p class="lead">Ο κωδικός είναι σωστός. Απομένει ένα βήμα.</p><div class="notice todo"><strong>Η σύνδεση δεν έχει ξεκινήσει ακόμα.</strong><span>Πατήστε το κουμπί «Έναρξη ασφαλούς σύνδεσης» παρακάτω. Μπορεί να περάσουν μερικά δευτερόλεπτα μέχρι να συνδεθεί ο τεχνικός.</span></div>{duration_block}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν εγκαθίσταται τίποτα μόνιμα. Η σύνδεση κλείνει αυτόματα όταν τελειώσει η διάρκεια.</p>'''
     return wrap(content)
 
+def ha_card(flow_id,flow):
+    st=ha_state(flow)
+    if st=="ready":
+        return '<div class="notice success"><strong>Προσωρινός λογαριασμός Home Assistant: δημιουργήθηκε</strong><span>Ο τεχνικός τον έλαβε κρυπτογραφημένο. Θα διαγραφεί αυτόματα όταν τελειώσει η υποστήριξη.</span></div>'
+    if st=="creating":
+        return '<div class="notice warn"><strong>Δημιουργείται ο προσωρινός λογαριασμός…</strong><span>Περιμένετε λίγα δευτερόλεπτα.</span></div>'
+    err=''
+    if st=="failed":
+        err='<div class="notice error"><strong>Δεν δημιουργήθηκε ο λογαριασμός.</strong><span>Δεν έγινε καμία αλλαγή στο Home Assistant σας. Ενημερώστε τον τεχνικό.</span></div>'
+    return err+f'''<section class="card"><strong>Πρόσβαση στο Home Assistant (προαιρετικό)</strong><p class="hint">Αν ο τεχνικός χρειάζεται να δει ή να ρυθμίσει το Home Assistant σας, πατήστε το κουμπί. Θα δημιουργηθεί <strong>ένας προσωρινός λογαριασμός διαχειριστή μόνο για αυτή τη συνεδρία</strong>. Δεν αλλάζει κανέναν δικό σας λογαριασμό και <strong>διαγράφεται αυτόματα</strong> όταν τελειώσει η υποστήριξη.</p><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="ha_create"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Δημιουργία προσωρινού λογαριασμού</button></form></section>'''
+
 def status_page(flow_id,flow):
     state=flow.get('state') if flow else None
     if state=='running':
@@ -235,7 +294,8 @@ def status_page(flow_id,flow):
             try: ext_min=int(flow.get("ext_added_s") or 0)//60
             except Exception: ext_min=0
             ext_txt=f"<br><small>Ο τεχνικός πρόσθεσε {ext_min} λεπτά στη συνεδρία.</small>" if ext_min>0 else ""
-            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p><div class="notice success"><strong>Ο τεχνικός μπορεί να συνδεθεί τώρα.</strong><span>Παραμείνετε διαθέσιμοι. Μην κλείσετε το πρόσθετο: αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="notice info"><strong>Χρόνος που απομένει</strong><span>{time_txt}{ext_txt}</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Αν χρειαστεί λίγος επιπλέον χρόνος, ο τεχνικός μπορεί να προσθέσει χρόνο και θα το δείτε εδώ.</p></div></div>'''
+            ha_block=ha_card(flow_id,flow)
+            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p><div class="notice success"><strong>Ο τεχνικός μπορεί να συνδεθεί τώρα.</strong><span>Παραμείνετε διαθέσιμοι. Μην κλείσετε το πρόσθετο: αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="notice info"><strong>Χρόνος που απομένει</strong><span>{time_txt}{ext_txt}</span></div>{ha_block}<div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Αν χρειαστεί λίγος επιπλέον χρόνος, ο τεχνικός μπορεί να προσθέσει χρόνο και θα το δείτε εδώ.</p></div></div>'''
         else:
             body='''<p class="lead">Η σύνδεση ξεκινά.</p><div class="notice warn"><strong>Η σύνδεση προετοιμάζεται.</strong><span>Περιμένετε λίγα δευτερόλεπτα και μην κλείσετε το πρόσθετο.</span></div>'''
         return wrap(body,flow_id)
@@ -289,6 +349,11 @@ class Handler(BaseHTTPRequestHandler):
             if not ok: self.respond(entry_page('error',message)); return
             print("CUSTOMER UI BRIDGE: δόθηκε ρητή εντολή Start — ο code παραδίδεται στο Phase F core μόνο μέσω private stdin pipe.",flush=True)
             self.respond(status_page(flow_id,get_flow_snapshot(flow_id))); return
+        if action=='ha_create':
+            flow_id=(form.get('flow') or [''])[0]
+            if not re.fullmatch(r'[A-Za-z0-9_-]{30,80}',flow_id): self.respond(entry_page('error','Μη έγκυρη προσωρινή UI συνεδρία.'),400); return
+            ha_create_account(flow_id)
+            self.respond(status_page(flow_id,get_flow_snapshot(flow_id))); return
         self.respond(entry_page('error','Μη υποστηριζόμενη ενέργεια.'),400)
 
 def terminate_child():
@@ -308,8 +373,13 @@ def shutdown_handler(signum,frame):
 
 if __name__=='__main__':
     signal.signal(signal.SIGTERM,shutdown_handler); signal.signal(signal.SIGINT,shutdown_handler)
+    print("HA TEMP ACCOUNT: έλεγχος υπολοίπων στην εκκίνηση: "+ha_account.cleanup_leftover(),flush=True)
     print(f"Smart Pro Remote Support {VERSION}: Ingress UI listening on internal port {PORT}.",flush=True)
     server=ThreadingHTTPServer(("0.0.0.0",PORT),Handler); server.daemon_threads=True
     try: server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt: pass
-    finally: terminate_child(); server.server_close()
+    finally:
+        terminate_child()
+        try: ha_account.delete_account()
+        except Exception: pass
+        server.server_close()
