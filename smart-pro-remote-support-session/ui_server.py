@@ -14,10 +14,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.9.9"
+VERSION = "0.10.0"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.9.9.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.10.0.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -134,6 +134,15 @@ def run_phase_f(flow_id, code):
             line=line.rstrip("\n"); print(line,flush=True)
             if "CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ" in line: success=True
             if line.startswith("ΣΦΑΛΜΑ:"): saw_failure=True
+            if line.startswith("SESSION EXTENSION APPLIED: +"):
+                try:
+                    added=int(line.split("+",1)[1].split("s",1)[0])
+                except Exception:
+                    added=0
+                if added>0:
+                    with STATE_LOCK:
+                        f1=FLOWS.get(flow_id)
+                        if f1: f1["ext_added_s"]=int(f1.get("ext_added_s") or 0)+added
             if line.startswith("ΕΠΙΤΥΧΙΑ: Το MeshAgent ξεκίνησε ως ephemeral foreground"):
                 with STATE_LOCK:
                     f0=FLOWS.get(flow_id)
@@ -221,9 +230,12 @@ def status_page(flow_id,flow):
         left=minutes_left(flow) if flow.get("agent_up") else None
         if flow.get("agent_up"):
             if left is None: time_txt="Ο χρόνος υποστήριξης μετράει από τη στιγμή που ξεκίνησε η σύνδεση."
-            elif left<60: time_txt="Απομένει λιγότερο από 1 λεπτό."
-            else: time_txt=f"Απομένουν περίπου {(left+59)//60} λεπτά."
-            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p><div class="notice success"><strong>Ο τεχνικός μπορεί να συνδεθεί τώρα.</strong><span>Παραμείνετε διαθέσιμοι. Μην κλείσετε το πρόσθετο: αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="notice info"><strong>Χρόνος υποστήριξης</strong><span>{time_txt}</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Αν χρειαστεί λίγος επιπλέον χρόνος, ο τεχνικός μπορεί να προτείνει παράταση και θα την εγκρίνετε από τον ασφαλή σύνδεσμο του email σας.</p></div></div>'''
+            elif left<60: time_txt="Υπολείπεται λιγότερο από 1 λεπτό."
+            else: time_txt=f"Υπολείπονται περίπου {(left+59)//60} λεπτά."
+            try: ext_min=int(flow.get("ext_added_s") or 0)//60
+            except Exception: ext_min=0
+            ext_txt=f"<br><small>Ο τεχνικός πρόσθεσε {ext_min} λεπτά στη συνεδρία.</small>" if ext_min>0 else ""
+            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p><div class="notice success"><strong>Ο τεχνικός μπορεί να συνδεθεί τώρα.</strong><span>Παραμείνετε διαθέσιμοι. Μην κλείσετε το πρόσθετο: αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="notice info"><strong>Χρόνος που απομένει</strong><span>{time_txt}{ext_txt}</span></div><div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Αν χρειαστεί λίγος επιπλέον χρόνος, ο τεχνικός μπορεί να προσθέσει χρόνο και θα το δείτε εδώ.</p></div></div>'''
         else:
             body='''<p class="lead">Η σύνδεση ξεκινά.</p><div class="notice warn"><strong>Η σύνδεση προετοιμάζεται.</strong><span>Περιμένετε λίγα δευτερόλεπτα και μην κλείσετε το πρόσθετο.</span></div>'''
         return wrap(body,flow_id)

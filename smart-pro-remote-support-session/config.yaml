@@ -1,6 +1,6 @@
 name: "Smart Pro Remote Support"
 description: "Προσωρινή τεχνική υποστήριξη από το Smart Pro System. Εισάγετε τον κωδικό που σας στείλαμε και η σύνδεση ξεκινά μόνο όταν την ξεκινήσετε εσείς. Μετά το τέλος δεν μένει τίποτα εγκατεστημένο."
-version: "0.9.9"
+version: "0.10.0"
 slug: "smart_pro_remote_support_session"
 arch:
   - aarch64
