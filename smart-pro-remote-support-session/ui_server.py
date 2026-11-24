@@ -18,10 +18,10 @@ from urllib.parse import parse_qs, urlparse
 import ha_account
 import ha_proxy
 
-VERSION = "0.13.0"
+VERSION = "0.14.0"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.13.0.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.14.0.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -340,7 +340,13 @@ RUNTIME_MAX_FILE="/tmp/smart-pro-phase-f-runtime/.runtime-max-seconds"
 def minutes_left(flow):
     """Εκτίμηση λεπτών που απομένουν. Διαβάζει μόνο το ήδη υπάρχον runtime όριο (ενημερώνεται και από εγκεκριμένη παράταση)."""
     try:
-        if flow.get("ends_ts"): return max(0,int(float(flow["ends_ts"])-time.time()))
+        if flow.get("ends_ts"):
+            c=flow.get("support_contract") if isinstance(flow.get("support_contract"),dict) else {}
+            try: g=int(c.get("startup_grace_seconds") or 0)
+            except Exception: g=0
+            r=float(flow["ends_ts"])-time.time()
+            if r>g>0: r-=g
+            return max(0,int(r))
         started=float(flow.get("agent_started") or 0)
         if not started: return None
         max_s=int(open(RUNTIME_MAX_FILE).read().strip())
@@ -356,8 +362,8 @@ def minutes_left(flow):
 def styles():
     return '''<style>
 :root{--bg:#07111f;--panel:#111e31;--panel2:#0d192a;--line:#29405e;--text:#f5f8fd;--muted:#a9bfd8;--accent:#65c7f7;--accent2:#89dcff;--success:#42d39d;--successbg:#0e322c;--warn:#f6c85f;--warnbg:#372d0b;--error:#ff8e8e;--errorbg:#3a1d24}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;padding:28px}.shell{width:min(760px,100%);background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,.28)}.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:800}h1{font-size:clamp(32px,5vw,48px);line-height:1.05;margin:10px 0 12px}.lead{color:var(--muted);font-size:17px;line-height:1.6;margin:0 0 28px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:22px}label{display:block;font-weight:800;margin-bottom:9px}.hint{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 15px}input[type=text]{width:100%;border:1px solid #395372;border-radius:13px;background:#081424;color:#fff;font-size:21px;letter-spacing:.08em;padding:15px 16px;outline:none;text-transform:uppercase}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(101,199,247,.14)}button{margin-top:14px;border:0;border-radius:13px;padding:14px 18px;background:var(--accent);color:#06111d;font-size:16px;font-weight:900;cursor:pointer;width:100%}button:hover{background:var(--accent2)}.notice{margin:0 0 18px;border-radius:15px;padding:16px 18px;display:flex;gap:5px;flex-direction:column;line-height:1.45}.success{border:1px solid #329b7e;background:var(--successbg)}.warn{border:1px solid #967719;background:var(--warnbg)}.error{border:1px solid #a84f5f;background:var(--errorbg);color:#ffe6e9}.ready{margin:18px 0;border-top:1px solid var(--line);padding-top:18px;display:flex;gap:12px;align-items:flex-start}.ready p{margin:5px 0 0;color:var(--muted);line-height:1.5}.dot{width:12px;height:12px;border-radius:50%;background:var(--success);margin-top:5px;box-shadow:0 0 0 5px rgba(66,211,157,.12)}.pulse{animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}.security{margin-top:18px;color:var(--muted);font-size:13px;line-height:1.55}.security strong{color:var(--text)}.version{margin-top:24px;color:#7691b1;font-size:12px;text-align:center}@media(max-width:560px){body{padding:12px}.shell{padding:24px 18px;border-radius:18px}}
-.notice.info{background:var(--panel2);border:1px solid var(--line)}.notice.todo{background:var(--warnbg);border:2px solid var(--warn)}.msg{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:#081424;border:1px solid var(--line);line-height:1.45}.msg.tech{border-color:var(--accent)}a{color:var(--accent)}.step{font-size:13px;font-weight:800;color:var(--accent);letter-spacing:.06em;margin:0 0 8px}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;padding:14px}.shell{width:min(680px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px 22px;box-shadow:0 18px 60px rgba(0,0,0,.28)}.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--accent);font-weight:800}h1{font-size:clamp(22px,4vw,28px);line-height:1.15;margin:6px 0 8px}.lead{color:var(--muted);font-size:15px;line-height:1.45;margin:0 0 12px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:0 0 10px}.card strong{font-size:15px}label{display:block;font-weight:800;margin-bottom:6px}.hint{color:var(--muted);font-size:13px;line-height:1.45;margin:4px 0 8px}input[type=text]{width:100%;border:1px solid #395372;border-radius:11px;background:#081424;color:#fff;font-size:20px;letter-spacing:.08em;padding:11px 14px;outline:none;text-transform:uppercase}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(101,199,247,.14)}button{margin-top:10px;border:0;border-radius:11px;padding:12px 16px;background:var(--accent);color:#06111d;font-size:15px;font-weight:900;cursor:pointer;width:100%}button:hover{background:var(--accent2)}.notice{margin:0 0 10px;border-radius:12px;padding:10px 14px;display:flex;gap:3px;flex-direction:column;line-height:1.4;font-size:14px}.success{border:1px solid #329b7e;background:var(--successbg)}.warn{border:1px solid #967719;background:var(--warnbg)}.error{border:1px solid #a84f5f;background:var(--errorbg);color:#ffe6e9}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--success);margin-right:8px;box-shadow:0 0 0 4px rgba(66,211,157,.12)}.pulse{animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}.security{margin:10px 0 0;color:var(--muted);font-size:12.5px;line-height:1.45}.security strong{color:var(--text)}.version{margin-top:12px;color:#7691b1;font-size:11px;text-align:center}
+.notice.info{background:var(--panel2);border:1px solid var(--line)}.notice.todo{background:var(--warnbg);border:2px solid var(--warn)}.step{font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.06em;margin:0 0 6px}.strip{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 10px}.strip .notice{margin:0}.msg{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:#081424;border:1px solid var(--line);line-height:1.4;font-size:14px}.msg.tech{border-color:var(--accent)}.msg small{color:var(--muted)}a.btnlink{display:block;margin-top:10px;padding:11px 14px;border:1px solid var(--accent);border-radius:11px;color:var(--accent);font-weight:800;text-align:center;text-decoration:none;font-size:15px}a.btnlink:hover{background:rgba(101,199,247,.1)}a{color:var(--accent)}.opt{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--muted)}@media(max-width:560px){.shell{padding:16px 14px}.strip{grid-template-columns:1fr}}
 </style>'''
 
 def wrap(content,refresh=None):
@@ -366,7 +372,7 @@ def wrap(content,refresh=None):
 
 def entry_page(status=None,message=None):
     notice=f'<div class="notice error"><strong>Δεν ολοκληρώθηκε η επιβεβαίωση.</strong><span>{html.escape(message or "")}</span></div>' if status=='error' else ''
-    content=f'''<p class="step">ΒΗΜΑ 1 ΑΠΟ 2</p><p class="lead">Εισαγάγετε τον προσωρινό κωδικό που δημιουργήθηκε από τον ασφαλή σύνδεσμο της συγκεκριμένης συνεδρίας σας.</p>{notice}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="validate"><label for="support_code">Κωδικός υποστήριξης</label><p class="hint">Μορφή: <strong>SP-XXXX-XXXX</strong>. Ο κωδικός ελέγχεται με ασφαλή σύνδεση.</p><input id="support_code" name="support_code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="SP-XXXX-XXXX" pattern="SP-[A-Za-z0-9]{{4}}-[A-Za-z0-9]{{4}}" required><button type="submit">Έλεγχος κωδικού</button></form></section><p class="security"><strong>Ασφάλεια:</strong> ο κωδικός δεν αποθηκεύεται πουθενά στο σύστημά σας. Μετά τον έλεγχο, η σύνδεση ξεκινά μόνο όταν πατήσετε εσείς το κουμπί «Έναρξη ασφαλούς σύνδεσης».</p>'''
+    content=f'''<p class="step">ΒΗΜΑ 1 ΑΠΟ 2</p><p class="lead">Γράψτε τον κωδικό που πήρατε από τον ασφαλή σύνδεσμο ή από εμάς.</p>{notice}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="validate"><label for="support_code">Κωδικός υποστήριξης</label><p class="hint">Μορφή: <strong>SP-XXXX-XXXX</strong></p><input id="support_code" name="support_code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="SP-XXXX-XXXX" pattern="SP-[A-Za-z0-9]{{4}}-[A-Za-z0-9]{{4}}" required><button type="submit">Έλεγχος κωδικού</button></form></section><p class="security"><strong>Ασφάλεια:</strong> ο κωδικός δεν αποθηκεύεται. Η σύνδεση ξεκινά μόνο όταν πατήσετε εσείς «Έναρξη ασφαλούς σύνδεσης».</p>'''
     return wrap(content)
 
 def validated_page(flow_id):
@@ -377,10 +383,10 @@ def validated_page(flow_id):
     except Exception: duration=0
     production=bool(contract.get("production_runtime_enabled") is True)
     if production and (duration in (30,60,90) or (contract.get("kind")=="admin_support" and 5<=duration<=240)):
-        duration_block=f'<div class="notice info"><strong>Διάρκεια υποστήριξης: {duration} λεπτά</strong><span>Η διάρκεια μετράει από τη στιγμή που θα πατήσετε «Έναρξη ασφαλούς σύνδεσης».</span></div>'
+        duration_block=f'<div class="notice info"><strong>Διάρκεια υποστήριξης: {duration} λεπτά</strong><span>Μετράει από τη στιγμή που θα πατήσετε «Έναρξη ασφαλούς σύνδεσης».</span></div>'
     else:
         duration_block='<div class="notice warn"><strong>Δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη διάρκεια. Η δοκιμή κλείνει μετά από 60 δευτερόλεπτα.</span></div>'
-    content=f'''<p class="step">ΒΗΜΑ 2 ΑΠΟ 2</p><p class="lead">Ο κωδικός είναι σωστός. Απομένει ένα βήμα.</p><div class="notice todo"><strong>Η σύνδεση δεν έχει ξεκινήσει ακόμα.</strong><span>Πατήστε το κουμπί «Έναρξη ασφαλούς σύνδεσης» παρακάτω. Μπορεί να περάσουν μερικά δευτερόλεπτα μέχρι να συνδεθεί ο τεχνικός.</span></div>{duration_block}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν εγκαθίσταται τίποτα μόνιμα. Η σύνδεση κλείνει αυτόματα όταν τελειώσει η διάρκεια.</p>'''
+    content=f'''<p class="step">ΒΗΜΑ 2 ΑΠΟ 2</p><p class="lead">Ο κωδικός είναι σωστός. Απομένει ένα βήμα.</p><div class="notice todo"><strong>Η σύνδεση δεν έχει ξεκινήσει ακόμα.</strong><span>Πατήστε «Έναρξη ασφαλούς σύνδεσης». Ο τεχνικός θα συνδεθεί σε λίγα δευτερόλεπτα.</span></div>{duration_block}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security">Δεν εγκαθίσταται τίποτα μόνιμα. Η σύνδεση κλείνει αυτόματα στο τέλος του χρόνου.</p>'''
     return wrap(content)
 
 def compose_page(flow_id,note=None):
@@ -391,44 +397,47 @@ def compose_page(flow_id,note=None):
 def ha_card(flow_id,flow):
     st=ha_state(flow)
     if st=="ready":
-        return '<div class="notice success"><strong>Προσωρινός λογαριασμός Home Assistant: δημιουργήθηκε</strong><span>Ο τεχνικός τον έλαβε κρυπτογραφημένο. Θα διαγραφεί αυτόματα όταν τελειώσει η υποστήριξη.</span></div>'
+        return '<div class="notice success"><strong>Προσωρινός λογαριασμός: έτοιμος</strong><span>Ο τεχνικός τον έλαβε κρυπτογραφημένο. Σβήνεται αυτόματα στο τέλος.</span></div>'
     if st=="creating":
-        return '<div class="notice warn"><strong>Δημιουργείται ο προσωρινός λογαριασμός…</strong><span>Περιμένετε λίγα δευτερόλεπτα.</span></div>'
+        return '<div class="notice warn"><strong>Δημιουργείται ο προσωρινός λογαριασμός…</strong><span>Λίγα δευτερόλεπτα.</span></div>'
     err=''
     if st=="failed":
-        err='<div class="notice error"><strong>Δεν δημιουργήθηκε ο λογαριασμός.</strong><span>Δεν έγινε καμία αλλαγή στο Home Assistant σας. Ενημερώστε τον τεχνικό.</span></div>'
-    return err+f'''<section class="card"><strong>Πρόσβαση στο Home Assistant (προαιρετικό)</strong><p class="hint">Αν ο τεχνικός χρειάζεται να δει ή να ρυθμίσει το Home Assistant σας, πατήστε το κουμπί. Θα δημιουργηθεί <strong>ένας προσωρινός λογαριασμός διαχειριστή μόνο για αυτή τη συνεδρία</strong>. Δεν αλλάζει κανέναν δικό σας λογαριασμό και <strong>διαγράφεται αυτόματα</strong> όταν τελειώσει η υποστήριξη.</p><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="ha_create"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Δημιουργία προσωρινού λογαριασμού</button></form></section>'''
+        err='<div class="notice error"><strong>Δεν δημιουργήθηκε ο λογαριασμός.</strong><span>Δεν άλλαξε τίποτα στο Home Assistant σας. Ενημερώστε τον τεχνικό.</span></div>'
+    return err+f'''<section class="card"><span class="opt">ΠΡΟΑΙΡΕΤΙΚΟ</span><br><strong>Πρόσβαση στο Home Assistant σας</strong><p class="hint">Μόνο αν ο τεχνικός χρειάζεται να δει ή να ρυθμίσει το Home Assistant. Θα δημιουργηθεί <strong>ένας προσωρινός λογαριασμός μόνο για αυτή τη συνεδρία</strong>. Δεν αλλάζει δικούς σας λογαριασμούς και σβήνεται αυτόματα στο τέλος.</p><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="ha_create"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Δημιουργία προσωρινού λογαριασμού</button></form></section>'''
 
 def status_page(flow_id,flow):
     state=flow.get('state') if flow else None
     if state=='running':
         left=minutes_left(flow) if flow.get("agent_up") else None
         if flow.get("agent_up"):
-            if left is None: time_txt="Ο χρόνος υποστήριξης μετράει από τη στιγμή που ξεκίνησε η σύνδεση."
-            elif left<60: time_txt="Υπολείπεται λιγότερο από 1 λεπτό."
-            else: time_txt=f"Υπολείπονται περίπου {(left+59)//60} λεπτά."
+            if left is None: time_txt="Ο χρόνος μετράει από την έναρξη της σύνδεσης."
+            elif left<60: time_txt="Λιγότερο από 1 λεπτό"
+            else: time_txt=f"Περίπου {(left+59)//60} λεπτά"
             try: ext_min=int(flow.get("ext_added_s") or 0)//60
             except Exception: ext_min=0
-            ext_txt=f"<br><small>Ο τεχνικός πρόσθεσε {ext_min} λεπτά στη συνεδρία.</small>" if ext_min>0 else ""
+            ext_txt=f"<br><small>Ο τεχνικός πρόσθεσε {ext_min} λεπτά.</small>" if ext_min>0 else ""
             ha_block=ha_card(flow_id,flow)
             clock=ends_clock(flow)
-            clock_txt=f" Λήγει στις <strong>{clock}</strong>." if clock else ""
+            clock_txt=f" · λήγει στις <strong>{clock}</strong>" if clock else ""
             if flow.get("runtime_ended"):
                 body=f'''<p class="lead">Ολοκληρώνεται το κλείσιμο.</p><div class="notice warn"><strong>Η υποστήριξη τελείωσε.</strong><span>Κλείνει η σύνδεση και σβήνονται τα προσωρινά στοιχεία. Περιμένετε λίγο και μην κλείσετε το πρόσθετο.</span></div>'''
                 return wrap(body,flow_id)
-            tech=('<div class="notice success"><strong>Ο τεχνικός έχει συνδεθεί.</strong></div>' if flow.get("tech_seen") else '<div class="notice info"><strong>Ο τεχνικός δεν έχει συνδεθεί ακόμα.</strong><span>Παραμείνετε διαθέσιμοι.</span></div>')
-            msgs=flow.get("messages") or []
-            if msgs:
-                rows="".join(f'<p class="msg {m["from"]}"><small>{"Τεχνικός" if m["from"]=="tech" else "Εσείς"}</small><br>{html.escape(m["text"])}</p>' for m in msgs[-8:])
-                msg_block=f'<section class="card"><strong>Μηνύματα</strong>{rows}<p class="hint"><a href="?flow={html.escape(flow_id)}&amp;compose=1">Γράψτε στον τεχνικό</a></p></section>'
+            if flow.get("tech_seen"):
+                tech='<div class="notice success"><strong>Ο τεχνικός έχει συνδεθεί</strong></div>'
             else:
-                msg_block=f'<section class="card"><strong>Μηνύματα</strong><p class="hint">Δεν υπάρχουν μηνύματα. <a href="?flow={html.escape(flow_id)}&amp;compose=1">Γράψτε στον τεχνικό</a></p></section>'
-            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p>{tech}<div class="notice info"><strong>Χρόνος που απομένει</strong><span>{time_txt}{clock_txt}{ext_txt}</span></div>{msg_block}{ha_block}<div class="ready"><span class="dot pulse"></span><div><strong>Η συνεδρία είναι ενεργή</strong><p>Μην κλείσετε το πρόσθετο: η σύνδεση τερματίζεται αμέσως. Η σελίδα ενημερώνεται μόνη της.</p></div></div>'''
+                tech='<div class="notice info"><strong>Ο τεχνικός δεν έχει συνδεθεί ακόμα</strong><span>Παραμείνετε διαθέσιμοι.</span></div>'
+            left_txt=time_txt.rstrip(".")
+            timebox=f'<div class="notice info"><strong>Χρόνος που απομένει</strong><span>{left_txt}{clock_txt}{ext_txt}</span></div>'
+            msgs=flow.get("messages") or []
+            rows="".join(f'<p class="msg {m["from"]}"><small>{"Τεχνικός" if m["from"]=="tech" else "Εσείς"}</small><br>{html.escape(m["text"])}</p>' for m in msgs[-4:])
+            empty='' if msgs else '<p class="hint">Δεν υπάρχουν μηνύματα ακόμα.</p>'
+            msg_block=f'<section class="card"><strong>Μηνύματα</strong>{rows}{empty}<a class="btnlink" href="?flow={html.escape(flow_id)}&amp;compose=1">Γράψτε στον τεχνικό</a></section>'
+            body=f'''<p class="lead"><span class="dot pulse"></span>Η σύνδεση είναι ενεργή. Μην κλείσετε το πρόσθετο.</p><div class="strip">{tech}{timebox}</div>{msg_block}{ha_block}'''
         else:
             body='''<p class="lead">Η σύνδεση ξεκινά.</p><div class="notice warn"><strong>Η σύνδεση προετοιμάζεται.</strong><span>Περιμένετε λίγα δευτερόλεπτα και μην κλείσετε το πρόσθετο.</span></div>'''
         return wrap(body,flow_id)
     if state=='completed':
-        return wrap(f'''<p class="lead">Η προσωρινή συνεδρία ολοκληρώθηκε.</p><div class="notice success"><strong>Η υποστήριξη τερματίστηκε με ασφάλεια.</strong><span>Η σύνδεση έκλεισε και δεν έχει μείνει τίποτα ενεργό στο σύστημά σας.</span></div><p class="security">Μπορείτε να κλείσετε το πρόσθετο.</p>''')
+        return wrap(f'''<p class="lead">Η προσωρινή συνεδρία ολοκληρώθηκε.</p><div class="notice success"><strong>Η υποστήριξη τερματίστηκε με ασφάλεια.</strong><span>Η σύνδεση έκλεισε και δεν έχει μείνει τίποτα ενεργό στο σύστημά σας. Μπορείτε να κλείσετε το πρόσθετο.</span></div>''')
     if state=='failed':
         return wrap(f'''<p class="lead">Η ασφαλής σύνδεση δεν ολοκληρώθηκε.</p><div class="notice error"><strong>Η σύνδεση σταμάτησε με ασφάλεια.</strong><span>Δεν έγινε καμία αλλαγή στο σύστημά σας.</span></div><p class="security">Δεν γίνεται αυτόματη νέα προσπάθεια. Επικοινωνήστε μαζί μας για να σας βοηθήσουμε να ξεκινήσετε ξανά.</p>''')
     return entry_page('error','Η σελίδα έληξε. Εισαγάγετε ξανά τον κωδικό.')
