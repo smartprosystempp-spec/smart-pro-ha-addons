@@ -15,11 +15,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import ha_account
+import ha_proxy
 
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.11.0.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.12.0.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -180,6 +181,7 @@ def start_flow(flow_id):
     threading.Thread(target=run_phase_f,args=(flow_id,code),daemon=True).start(); return True,"started"
 
 HA_LOCK = threading.Lock()
+HA_PROXY = ha_proxy.HALocalProxy()
 
 def ha_state(flow):
     return str((flow or {}).get("ha_state") or "none")
@@ -194,11 +196,18 @@ def ha_create_account(flow_id):
     if not HA_LOCK.acquire(blocking=False): return False,"Η δημιουργία βρίσκεται ήδη σε εξέλιξη."
     try:
         broker_url=load_broker_url() or DEFAULT_BROKER_URL
-        try:
-            ha_account.create_and_deliver(broker_url)
-            ok=True; reason=""
-        except Exception as exc:
-            ok=False; reason=str(exc)[:60]
+        # 0.12.0: πρώτα ο τοπικός proxy (χωρίς αυτόν ο λογαριασμός δεν θα ήταν χρήσιμος). Αν δεν ξεκινήσει, δεν δημιουργείται τίποτα.
+        px_ok,px_msg=HA_PROXY.start()
+        print("HA ACCESS PROXY: "+("ενεργός ("+px_msg+")." if px_ok else "δεν ξεκίνησε ("+px_msg+") — δεν δημιουργείται λογαριασμός."),flush=True)
+        if not px_ok:
+            ok=False; reason="proxy"
+        else:
+            try:
+                ha_account.create_and_deliver(broker_url)
+                ok=True; reason=""
+            except Exception as exc:
+                ok=False; reason=str(exc)[:60]
+                HA_PROXY.stop()
         print("HA TEMP ACCOUNT: "+("δημιουργήθηκε και παραδόθηκε κρυπτογραφημένα." if ok else "απέτυχε ("+reason+") — δεν έμεινε λογαριασμός."),flush=True)
         with STATE_LOCK:
             f=FLOWS.get(flow_id)
@@ -215,6 +224,8 @@ def ha_watch_and_delete(flow_id):
         with STATE_LOCK:
             f=FLOWS.get(flow_id); running=bool(f and f.get("state")=="running")
         if not running or not ha_account.context_alive() or SHUTTING_DOWN: break
+    st=HA_PROXY.stop()
+    if st is not None: print("HA ACCESS PROXY: σταμάτησε (HTTP αιτήματα=%s, WebSocket συνδέσεις=%s, διάρκεια=%ss)."%(st.get("http",0),st.get("ws",0),st.get("seconds",0)),flush=True)
     done=False
     for _ in range(5):
         try:
@@ -380,6 +391,8 @@ if __name__=='__main__':
     except KeyboardInterrupt: pass
     finally:
         terminate_child()
+        try: HA_PROXY.stop()
+        except Exception: pass
         try: ha_account.delete_account()
         except Exception: pass
         server.server_close()
