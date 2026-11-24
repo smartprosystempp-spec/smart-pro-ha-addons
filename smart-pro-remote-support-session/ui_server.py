@@ -11,16 +11,17 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import ha_account
 import ha_proxy
 
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 PORT = 8099
 OPTIONS_PATH = "/data/options.json"
-PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.12.0.sh"
+PHASE_SCRIPT = "/opt/smart-pro/phase-f-ui-0.13.0.sh"
 DEFAULT_BROKER_URL = "https://smart-pro-system.gr/wp-json/smart-pro-remote/v1/session/validate"
 INGRESS_PROXY_IP = "172.30.32.2"
 CODE_RE = re.compile(r"^SP-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -72,12 +73,15 @@ def broker_validate(code):
             try: max_runtime=int(raw_contract.get("max_runtime_seconds") or 60)
             except Exception: max_runtime=60
             production=bool(raw_contract.get("production_runtime_enabled") is True)
-            if duration not in (0,30,60,90): duration=0
+            kind_raw=str(raw_contract.get("kind") or "unknown")
+            admin_kind=(kind_raw=="admin_support")
+            valid_duration=(5<=duration<=240) if admin_kind else (duration in (30,60,90))
+            if duration!=0 and not valid_duration: duration=0
             if qa_seconds != 60: qa_seconds=60
-            expected_max=(duration*60+60) if production and duration in (30,60,90) else 60
+            expected_max=(duration*60+60) if production and valid_duration and duration>0 else 60
             if production and startup_grace != 60: production=False
             if max_runtime != expected_max: production=False; max_runtime=60; startup_grace=0
-            if not production: duration=0 if str(raw_contract.get("duration_source") or "none") != "paid_guest_case" else duration
+            if not production: duration=0 if str(raw_contract.get("duration_source") or "none") not in ("paid_guest_case","admin_code") else duration
             contract={
                 "kind":str(raw_contract.get("kind") or "unknown")[:40],
                 "duration_minutes":duration,
@@ -137,6 +141,10 @@ def run_phase_f(flow_id, code):
             line=line.rstrip("\n"); print(line,flush=True)
             if "CONTROLLED EXECUTION PHASE F: ΟΛΟΚΛΗΡΩΘΗΚΕ" in line: success=True
             if line.startswith("ΣΦΑΛΜΑ:"): saw_failure=True
+            if line.strip()=="SESSION RUNTIME ENDED":
+                with STATE_LOCK:
+                    fe=FLOWS.get(flow_id)
+                    if fe: fe["runtime_ended"]=True
             if line.startswith("SESSION EXTENSION APPLIED: +"):
                 try:
                     added=int(line.split("+",1)[1].split("s",1)[0])
@@ -150,6 +158,7 @@ def run_phase_f(flow_id, code):
                 with STATE_LOCK:
                     f0=FLOWS.get(flow_id)
                     if f0: f0["agent_up"]=True; f0["agent_started"]=time.time()-3
+                threading.Thread(target=message_poller,args=(flow_id,),daemon=True).start()
         rc=proc.wait()
         with STATE_LOCK:
             f=FLOWS.get(flow_id)
@@ -227,20 +236,111 @@ def ha_watch_and_delete(flow_id):
     st=HA_PROXY.stop()
     if st is not None: print("HA ACCESS PROXY: σταμάτησε (HTTP αιτήματα=%s, WebSocket συνδέσεις=%s, διάρκεια=%ss)."%(st.get("http",0),st.get("ws",0),st.get("seconds",0)),flush=True)
     done=False
-    for _ in range(5):
+    for wait in (0,3,5,10,20,30,30,30,30,30,30,30,30,30):
+        if wait: time.sleep(wait)
         try:
             ha_account.delete_account(); done=True; break
-        except Exception: time.sleep(3)
+        except Exception: continue
     print("HA TEMP ACCOUNT: "+("διαγράφηκε." if done else "ΑΠΟΤΥΧΙΑ διαγραφής — θα επαναληφθεί στην επανεκκίνηση."),flush=True)
     with STATE_LOCK:
         f=FLOWS.get(flow_id)
         if f: f["ha_state"]="removed" if done else "remove_failed"
+
+
+def broker_messages_url():
+    url=load_broker_url() or DEFAULT_BROKER_URL
+    base=url.rsplit("/session/validate",1)[0]
+    u=base+"/session/execution/messages"
+    return u if u.startswith("https://") else None
+
+def messages_call(body=None,after_id=0):
+    """Μία κλήση προς τον Broker: προαιρετικά στέλνει μήνυμα και φέρνει τα νέα. Επιστρέφει dict ή None."""
+    ctx=ha_account.read_context(); url=broker_messages_url()
+    if not ctx or not url: return None
+    payload={"report_token":ctx["report_token"],"client":"home_assistant_os","client_version":ctx["client_version"],"architecture":ctx["architecture"],"after_id":int(after_id)}
+    if body: payload["body"]=body
+    req=urllib.request.Request(url,data=json.dumps(payload).encode("utf-8"),method="POST",headers={"Content-Type":"application/json","User-Agent":"SmartProRemoteSupportSession/msg","Cache-Control":"no-store"})
+    try:
+        with urllib.request.urlopen(req,timeout=10,context=ssl.create_default_context()) as resp:
+            data=json.loads(resp.read(65536).decode("utf-8")); data["_status"]=int(resp.status); return data
+    except urllib.error.HTTPError as exc:
+        try: data=json.loads(exc.read(65536).decode("utf-8"))
+        except Exception: data={}
+        data["_status"]=int(exc.code); return data
+    except Exception:
+        return None
+
+def apply_messages_response(flow_id,data):
+    if not isinstance(data,dict) or data.get("_status")!=200: return
+    with STATE_LOCK:
+        f=FLOWS.get(flow_id)
+        if not f: return
+        msgs=f.setdefault("messages",[]); known={m["id"] for m in msgs}
+        for m in data.get("messages") or []:
+            try: mid=int(m.get("id")); text=str(m.get("text") or "")[:600]; who="tech" if m.get("from")=="tech" else "customer"
+            except Exception: continue
+            if mid in known: continue
+            msgs.append({"id":mid,"from":who,"text":text,"at":str(m.get("at") or "")}); known.add(mid)
+            if who=="tech": f["unread_tech"]=True
+        try:
+            rem=int(data.get("remaining_seconds"))
+            f["ends_ts"]=time.time()+max(0,rem)
+        except Exception: pass
+        if data.get("technician_seen_at"): f["tech_seen"]=True
+
+def message_poller(flow_id):
+    """Ενημερώνει μηνύματα, ώρα λήξης και «ο τεχνικός συνδέθηκε» ανά ~5 δευτερόλεπτα όσο τρέχει η συνεδρία."""
+    while not SHUTTING_DOWN:
+        with STATE_LOCK:
+            f=FLOWS.get(flow_id); running=bool(f and f.get("state")=="running"); last=max([m["id"] for m in (f or {}).get("messages",[])] or [0])
+        if not running or not ha_account.context_alive(): break
+        data=messages_call(None,last)
+        apply_messages_response(flow_id,data)
+        time.sleep(5)
+
+def send_customer_message(flow_id,body):
+    body=" ".join((body or "").split())[:500]
+    if not body: return False,"Γράψτε πρώτα το μήνυμά σας."
+    with STATE_LOCK:
+        f=FLOWS.get(flow_id); running=bool(f and f.get("state")=="running" and f.get("agent_up")); last=max([m["id"] for m in (f or {}).get("messages",[])] or [0])
+    if not running: return False,"Η συνεδρία δεν είναι ενεργή."
+    data=messages_call(body,last)
+    if not data: return False,"Δεν στάλθηκε. Δοκιμάστε ξανά σε λίγο."
+    apply_messages_response(flow_id,data)
+    if data.get("_status")==200 and data.get("sent"): return True,"Στάλθηκε."
+    if data.get("_status")==429: return False,"Περιμένετε λίγα δευτερόλεπτα και στείλτε ξανά."
+    return False,"Δεν στάλθηκε. Δοκιμάστε ξανά σε λίγο."
+
+_TZ=None
+def local_tz():
+    """Ζώνη ώρας του Home Assistant (για «λήγει στις ΩΩ:ΛΛ»). Αν δεν βρεθεί, ώρα συσκευής."""
+    global _TZ
+    if _TZ is not None: return _TZ or None
+    name=""
+    try:
+        tok=os.environ.get("SUPERVISOR_TOKEN","")
+        req=urllib.request.Request("http://supervisor/core/api/config",headers={"Authorization":"Bearer "+tok})
+        with urllib.request.urlopen(req,timeout=5) as r: name=str(json.loads(r.read(65536).decode()).get("time_zone") or "")
+    except Exception: name=""
+    try:
+        from zoneinfo import ZoneInfo
+        _TZ=ZoneInfo(name) if name else False
+    except Exception: _TZ=False
+    return _TZ or None
+
+def ends_clock(flow):
+    try:
+        ts=float(flow.get("ends_ts") or 0)
+        if not ts: return None
+        return datetime.fromtimestamp(ts,local_tz()).strftime("%H:%M")
+    except Exception: return None
 
 RUNTIME_MAX_FILE="/tmp/smart-pro-phase-f-runtime/.runtime-max-seconds"
 
 def minutes_left(flow):
     """Εκτίμηση λεπτών που απομένουν. Διαβάζει μόνο το ήδη υπάρχον runtime όριο (ενημερώνεται και από εγκεκριμένη παράταση)."""
     try:
+        if flow.get("ends_ts"): return max(0,int(float(flow["ends_ts"])-time.time()))
         started=float(flow.get("agent_started") or 0)
         if not started: return None
         max_s=int(open(RUNTIME_MAX_FILE).read().strip())
@@ -257,7 +357,7 @@ def styles():
     return '''<style>
 :root{--bg:#07111f;--panel:#111e31;--panel2:#0d192a;--line:#29405e;--text:#f5f8fd;--muted:#a9bfd8;--accent:#65c7f7;--accent2:#89dcff;--success:#42d39d;--successbg:#0e322c;--warn:#f6c85f;--warnbg:#372d0b;--error:#ff8e8e;--errorbg:#3a1d24}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;padding:28px}.shell{width:min(760px,100%);background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,.28)}.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:800}h1{font-size:clamp(32px,5vw,48px);line-height:1.05;margin:10px 0 12px}.lead{color:var(--muted);font-size:17px;line-height:1.6;margin:0 0 28px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:22px}label{display:block;font-weight:800;margin-bottom:9px}.hint{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 15px}input[type=text]{width:100%;border:1px solid #395372;border-radius:13px;background:#081424;color:#fff;font-size:21px;letter-spacing:.08em;padding:15px 16px;outline:none;text-transform:uppercase}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(101,199,247,.14)}button{margin-top:14px;border:0;border-radius:13px;padding:14px 18px;background:var(--accent);color:#06111d;font-size:16px;font-weight:900;cursor:pointer;width:100%}button:hover{background:var(--accent2)}.notice{margin:0 0 18px;border-radius:15px;padding:16px 18px;display:flex;gap:5px;flex-direction:column;line-height:1.45}.success{border:1px solid #329b7e;background:var(--successbg)}.warn{border:1px solid #967719;background:var(--warnbg)}.error{border:1px solid #a84f5f;background:var(--errorbg);color:#ffe6e9}.ready{margin:18px 0;border-top:1px solid var(--line);padding-top:18px;display:flex;gap:12px;align-items:flex-start}.ready p{margin:5px 0 0;color:var(--muted);line-height:1.5}.dot{width:12px;height:12px;border-radius:50%;background:var(--success);margin-top:5px;box-shadow:0 0 0 5px rgba(66,211,157,.12)}.pulse{animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}.security{margin-top:18px;color:var(--muted);font-size:13px;line-height:1.55}.security strong{color:var(--text)}.version{margin-top:24px;color:#7691b1;font-size:12px;text-align:center}@media(max-width:560px){body{padding:12px}.shell{padding:24px 18px;border-radius:18px}}
-.notice.info{background:var(--panel2);border:1px solid var(--line)}.notice.todo{background:var(--warnbg);border:2px solid var(--warn)}.step{font-size:13px;font-weight:800;color:var(--accent);letter-spacing:.06em;margin:0 0 8px}
+.notice.info{background:var(--panel2);border:1px solid var(--line)}.notice.todo{background:var(--warnbg);border:2px solid var(--warn)}.msg{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:#081424;border:1px solid var(--line);line-height:1.45}.msg.tech{border-color:var(--accent)}a{color:var(--accent)}.step{font-size:13px;font-weight:800;color:var(--accent);letter-spacing:.06em;margin:0 0 8px}
 </style>'''
 
 def wrap(content,refresh=None):
@@ -276,11 +376,16 @@ def validated_page(flow_id):
     try: duration=int(raw_duration)
     except Exception: duration=0
     production=bool(contract.get("production_runtime_enabled") is True)
-    if duration in (30,60,90) and production:
+    if production and (duration in (30,60,90) or (contract.get("kind")=="admin_support" and 5<=duration<=240)):
         duration_block=f'<div class="notice info"><strong>Διάρκεια υποστήριξης: {duration} λεπτά</strong><span>Η διάρκεια μετράει από τη στιγμή που θα πατήσετε «Έναρξη ασφαλούς σύνδεσης».</span></div>'
     else:
-        duration_block='<div class="notice warn"><strong>Δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη διάρκεια 30/60/90. Η δοκιμή κλείνει μετά από 60 δευτερόλεπτα.</span></div>'
+        duration_block='<div class="notice warn"><strong>Δοκιμαστική συνεδρία</strong><span>Δεν υπάρχει συνδεδεμένη διάρκεια. Η δοκιμή κλείνει μετά από 60 δευτερόλεπτα.</span></div>'
     content=f'''<p class="step">ΒΗΜΑ 2 ΑΠΟ 2</p><p class="lead">Ο κωδικός είναι σωστός. Απομένει ένα βήμα.</p><div class="notice todo"><strong>Η σύνδεση δεν έχει ξεκινήσει ακόμα.</strong><span>Πατήστε το κουμπί «Έναρξη ασφαλούς σύνδεσης» παρακάτω. Μπορεί να περάσουν μερικά δευτερόλεπτα μέχρι να συνδεθεί ο τεχνικός.</span></div>{duration_block}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="start"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><button type="submit">Έναρξη ασφαλούς σύνδεσης</button></form></section><p class="security"><strong>Προσωρινή πρόσβαση:</strong> δεν εγκαθίσταται τίποτα μόνιμα. Η σύνδεση κλείνει αυτόματα όταν τελειώσει η διάρκεια.</p>'''
+    return wrap(content)
+
+def compose_page(flow_id,note=None):
+    n=f'<div class="notice info"><span>{html.escape(note)}</span></div>' if note else ''
+    content=f'''<p class="lead">Μήνυμα προς τον τεχνικό</p>{n}<section class="card"><form method="post" action=""><input type="hidden" name="csrf" value="{html.escape(CSRF_TOKEN)}"><input type="hidden" name="action" value="msg_send"><input type="hidden" name="flow" value="{html.escape(flow_id)}"><label for="msg_body">Το μήνυμά σας</label><p class="hint">Μέχρι 500 χαρακτήρες. Μην γράφετε κωδικούς πρόσβασης.</p><input id="msg_body" name="msg_body" type="text" maxlength="500" autocomplete="off" style="text-transform:none;letter-spacing:0;font-size:17px" required><button type="submit">Αποστολή</button></form><p class="hint"><a href="?flow={html.escape(flow_id)}">Πίσω στη σύνδεση</a></p></section>'''
     return wrap(content)
 
 def ha_card(flow_id,flow):
@@ -306,7 +411,19 @@ def status_page(flow_id,flow):
             except Exception: ext_min=0
             ext_txt=f"<br><small>Ο τεχνικός πρόσθεσε {ext_min} λεπτά στη συνεδρία.</small>" if ext_min>0 else ""
             ha_block=ha_card(flow_id,flow)
-            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p><div class="notice success"><strong>Ο τεχνικός μπορεί να συνδεθεί τώρα.</strong><span>Παραμείνετε διαθέσιμοι. Μην κλείσετε το πρόσθετο: αν το σταματήσετε, η σύνδεση τερματίζεται αμέσως.</span></div><div class="notice info"><strong>Χρόνος που απομένει</strong><span>{time_txt}{ext_txt}</span></div>{ha_block}<div class="ready"><span class="dot pulse"></span><div><strong>Η προσωρινή συνεδρία είναι ενεργή</strong><p>Η σελίδα ενημερώνεται αυτόματα. Αν χρειαστεί λίγος επιπλέον χρόνος, ο τεχνικός μπορεί να προσθέσει χρόνο και θα το δείτε εδώ.</p></div></div>'''
+            clock=ends_clock(flow)
+            clock_txt=f" Λήγει στις <strong>{clock}</strong>." if clock else ""
+            if flow.get("runtime_ended"):
+                body=f'''<p class="lead">Ολοκληρώνεται το κλείσιμο.</p><div class="notice warn"><strong>Η υποστήριξη τελείωσε.</strong><span>Κλείνει η σύνδεση και σβήνονται τα προσωρινά στοιχεία. Περιμένετε λίγο και μην κλείσετε το πρόσθετο.</span></div>'''
+                return wrap(body,flow_id)
+            tech=('<div class="notice success"><strong>Ο τεχνικός έχει συνδεθεί.</strong></div>' if flow.get("tech_seen") else '<div class="notice info"><strong>Ο τεχνικός δεν έχει συνδεθεί ακόμα.</strong><span>Παραμείνετε διαθέσιμοι.</span></div>')
+            msgs=flow.get("messages") or []
+            if msgs:
+                rows="".join(f'<p class="msg {m["from"]}"><small>{"Τεχνικός" if m["from"]=="tech" else "Εσείς"}</small><br>{html.escape(m["text"])}</p>' for m in msgs[-8:])
+                msg_block=f'<section class="card"><strong>Μηνύματα</strong>{rows}<p class="hint"><a href="?flow={html.escape(flow_id)}&amp;compose=1">Γράψτε στον τεχνικό</a></p></section>'
+            else:
+                msg_block=f'<section class="card"><strong>Μηνύματα</strong><p class="hint">Δεν υπάρχουν μηνύματα. <a href="?flow={html.escape(flow_id)}&amp;compose=1">Γράψτε στον τεχνικό</a></p></section>'
+            body=f'''<p class="lead">Η σύνδεση είναι ενεργή.</p>{tech}<div class="notice info"><strong>Χρόνος που απομένει</strong><span>{time_txt}{clock_txt}{ext_txt}</span></div>{msg_block}{ha_block}<div class="ready"><span class="dot pulse"></span><div><strong>Η συνεδρία είναι ενεργή</strong><p>Μην κλείσετε το πρόσθετο: η σύνδεση τερματίζεται αμέσως. Η σελίδα ενημερώνεται μόνη της.</p></div></div>'''
         else:
             body='''<p class="lead">Η σύνδεση ξεκινά.</p><div class="notice warn"><strong>Η σύνδεση προετοιμάζεται.</strong><span>Περιμένετε λίγα δευτερόλεπτα και μην κλείσετε το πρόσθετο.</span></div>'''
         return wrap(body,flow_id)
@@ -330,6 +447,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed_source(): self.respond(b"Forbidden",403); return
         flow_id=(parse_qs(urlparse(self.path).query).get('flow') or [''])[0]
         if flow_id:
+            if (parse_qs(urlparse(self.path).query).get('compose') or [''])[0]=='1':
+                snap=get_flow_snapshot(flow_id)
+                if snap and snap.get('state')=='running': self.respond(compose_page(flow_id)); return
             self.respond(status_page(flow_id,get_flow_snapshot(flow_id))); return
         active_flow_id,active_flow=get_active_flow_snapshot()
         if active_flow_id and active_flow:
@@ -339,7 +459,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed_source(): self.respond(b"Forbidden",403); return
         try: length=int(self.headers.get("Content-Length","0"))
         except ValueError: length=0
-        if length<=0 or length>8192: self.respond(entry_page('error','Μη έγκυρο αίτημα.'),400); return
+        if length<=0 or length>12288: self.respond(entry_page('error','Μη έγκυρο αίτημα.'),400); return
         form=parse_qs(self.rfile.read(length).decode("utf-8","replace"),keep_blank_values=True)
         csrf=(form.get('csrf') or [''])[0]
         if not secrets.compare_digest(csrf,CSRF_TOKEN): self.respond(entry_page('error','Η σελίδα έληξε. Ανοίξτε ξανά το Smart Pro Support και δοκιμάστε ξανά.'),403); return
@@ -364,6 +484,12 @@ class Handler(BaseHTTPRequestHandler):
             flow_id=(form.get('flow') or [''])[0]
             if not re.fullmatch(r'[A-Za-z0-9_-]{30,80}',flow_id): self.respond(entry_page('error','Μη έγκυρη προσωρινή UI συνεδρία.'),400); return
             ha_create_account(flow_id)
+            self.respond(status_page(flow_id,get_flow_snapshot(flow_id))); return
+        if action=='msg_send':
+            flow_id=(form.get('flow') or [''])[0]
+            if not re.fullmatch(r'[A-Za-z0-9_-]{30,80}',flow_id): self.respond(entry_page('error','Μη έγκυρη προσωρινή UI συνεδρία.'),400); return
+            ok,note=send_customer_message(flow_id,(form.get('msg_body') or [''])[0])
+            if not ok: self.respond(compose_page(flow_id,note)); return
             self.respond(status_page(flow_id,get_flow_snapshot(flow_id))); return
         self.respond(entry_page('error','Μη υποστηριζόμενη ενέργεια.'),400)
 
